@@ -4,7 +4,13 @@ import io
 
 import pytest
 
-from mcp_polygon.formatters import json_to_csv, _flatten_dict
+from mcp_polygon.formatters import (
+    json_to_csv,
+    json_to_csv_filtered,
+    json_to_compact,
+    json_to_json_filtered,
+    _flatten_dict,
+)
 
 
 class TestFlattenDict:
@@ -424,3 +430,281 @@ class TestJsonToCsvStdlib:
         assert rows[0]["name"] == "Café"
         assert rows[0]["symbol"] == "€"
         assert rows[0]["emoji"] == "🚀"
+
+
+class TestJsonToCsvFiltered:
+    """Tests for the json_to_csv_filtered function."""
+
+    def test_csv_filtered_with_field_selection(self):
+        """Test CSV output with field selection."""
+        json_input = {
+            "results": [
+                {"ticker": "AAPL", "close": 150.5, "volume": 1000, "extra": "data"},
+                {"ticker": "MSFT", "close": 280.0, "volume": 2000, "extra": "data2"},
+            ]
+        }
+        result = json_to_csv_filtered(json_input, fields=["ticker", "close"])
+
+        reader = csv.DictReader(io.StringIO(result))
+        rows = list(reader)
+
+        assert len(rows) == 2
+        assert "ticker" in rows[0]
+        assert "close" in rows[0]
+        assert "volume" not in rows[0]
+        assert "extra" not in rows[0]
+        assert rows[0]["ticker"] == "AAPL"
+        assert rows[0]["close"] == "150.5"
+
+    def test_csv_filtered_with_exclude_fields(self):
+        """Test CSV output with field exclusion."""
+        json_input = {
+            "results": [
+                {"ticker": "AAPL", "close": 150.5, "volume": 1000},
+            ]
+        }
+        result = json_to_csv_filtered(json_input, exclude_fields=["volume"])
+
+        reader = csv.DictReader(io.StringIO(result))
+        rows = list(reader)
+
+        assert len(rows) == 1
+        assert "ticker" in rows[0]
+        assert "close" in rows[0]
+        assert "volume" not in rows[0]
+
+    def test_csv_filtered_no_filters(self):
+        """Test CSV output without any filters (should match json_to_csv)."""
+        json_input = {
+            "results": [
+                {"ticker": "AAPL", "close": 150.5},
+            ]
+        }
+        result = json_to_csv_filtered(json_input)
+
+        reader = csv.DictReader(io.StringIO(result))
+        rows = list(reader)
+
+        assert len(rows) == 1
+        assert rows[0]["ticker"] == "AAPL"
+        assert rows[0]["close"] == "150.5"
+
+    def test_csv_filtered_nested_data(self):
+        """Test CSV filtering with nested data (flattened)."""
+        json_input = {
+            "results": [
+                {
+                    "ticker": "AAPL",
+                    "day": {
+                        "close": 150.5,
+                        "volume": 1000,
+                    }
+                }
+            ]
+        }
+        result = json_to_csv_filtered(json_input, fields=["ticker", "day_close"])
+
+        reader = csv.DictReader(io.StringIO(result))
+        rows = list(reader)
+
+        assert len(rows) == 1
+        assert rows[0]["ticker"] == "AAPL"
+        assert rows[0]["day_close"] == "150.5"
+        assert "day_volume" not in rows[0]
+
+    def test_csv_filtered_empty_results(self):
+        """Test CSV filtering with empty results."""
+        json_input = {"results": []}
+        result = json_to_csv_filtered(json_input, fields=["ticker"])
+        assert result == ""
+
+
+class TestJsonToCompact:
+    """Tests for the json_to_compact function."""
+
+    def test_compact_single_record(self):
+        """Test compact format for single record."""
+        json_input = {
+            "results": [
+                {"ticker": "AAPL", "close": 150.5, "volume": 1000}
+            ]
+        }
+        result = json_to_compact(json_input)
+
+        parsed = json.loads(result)
+        assert parsed["ticker"] == "AAPL"
+        assert parsed["close"] == 150.5
+        assert parsed["volume"] == 1000
+
+    def test_compact_with_field_selection(self):
+        """Test compact format with field selection."""
+        json_input = {
+            "results": [
+                {"ticker": "AAPL", "close": 150.5, "volume": 1000}
+            ]
+        }
+        result = json_to_compact(json_input, fields=["close"])
+
+        parsed = json.loads(result)
+        assert parsed == {"close": 150.5}
+
+    def test_compact_multiple_records_takes_first(self):
+        """Test that compact format takes first record from multiple."""
+        json_input = {
+            "results": [
+                {"ticker": "AAPL", "close": 150.5},
+                {"ticker": "MSFT", "close": 280.0},
+            ]
+        }
+        result = json_to_compact(json_input)
+
+        parsed = json.loads(result)
+        assert parsed["ticker"] == "AAPL"
+        assert parsed["close"] == 150.5
+
+    def test_compact_nested_data(self):
+        """Test compact format with nested data (flattened)."""
+        json_input = {
+            "results": [
+                {
+                    "ticker": "AAPL",
+                    "day": {
+                        "close": 150.5,
+                    }
+                }
+            ]
+        }
+        result = json_to_compact(json_input)
+
+        parsed = json.loads(result)
+        assert parsed["ticker"] == "AAPL"
+        assert parsed["day_close"] == 150.5
+
+    def test_compact_list_input(self):
+        """Test compact format with list input."""
+        json_input = [
+            {"ticker": "AAPL", "close": 150.5}
+        ]
+        result = json_to_compact(json_input)
+
+        parsed = json.loads(result)
+        assert parsed["ticker"] == "AAPL"
+
+    def test_compact_dict_input(self):
+        """Test compact format with dict input (no results key)."""
+        json_input = {"ticker": "AAPL", "close": 150.5}
+        result = json_to_compact(json_input)
+
+        parsed = json.loads(result)
+        assert parsed["ticker"] == "AAPL"
+
+    def test_compact_empty_results(self):
+        """Test compact format with empty results."""
+        json_input = {"results": []}
+        result = json_to_compact(json_input)
+
+        parsed = json.loads(result)
+        assert parsed == {}
+
+    def test_compact_format_is_minimal(self):
+        """Test that compact format has no whitespace."""
+        json_input = {
+            "results": [
+                {"ticker": "AAPL", "close": 150.5}
+            ]
+        }
+        result = json_to_compact(json_input)
+
+        # Should not contain extra whitespace
+        assert "\n" not in result
+        assert "  " not in result
+        # Should use minimal separators
+        assert result == '{"ticker":"AAPL","close":150.5}'
+
+
+class TestJsonToJsonFiltered:
+    """Tests for the json_to_json_filtered function."""
+
+    def test_json_filtered_basic(self):
+        """Test JSON output with basic data."""
+        json_input = {
+            "results": [
+                {"ticker": "AAPL", "close": 150.5}
+            ]
+        }
+        result = json_to_json_filtered(json_input)
+
+        parsed = json.loads(result)
+        assert isinstance(parsed, list)
+        assert len(parsed) == 1
+        assert parsed[0]["ticker"] == "AAPL"
+
+    def test_json_filtered_with_fields(self):
+        """Test JSON output with field selection."""
+        json_input = {
+            "results": [
+                {"ticker": "AAPL", "close": 150.5, "volume": 1000}
+            ]
+        }
+        result = json_to_json_filtered(json_input, fields=["ticker", "close"])
+
+        parsed = json.loads(result)
+        assert parsed[0]["ticker"] == "AAPL"
+        assert parsed[0]["close"] == 150.5
+        assert "volume" not in parsed[0]
+
+    def test_json_filtered_multiple_records(self):
+        """Test JSON output with multiple records."""
+        json_input = {
+            "results": [
+                {"ticker": "AAPL", "close": 150.5},
+                {"ticker": "MSFT", "close": 280.0},
+            ]
+        }
+        result = json_to_json_filtered(json_input)
+
+        parsed = json.loads(result)
+        assert len(parsed) == 2
+        assert parsed[0]["ticker"] == "AAPL"
+        assert parsed[1]["ticker"] == "MSFT"
+
+    def test_json_filtered_flattened(self):
+        """Test that JSON output is flattened by default."""
+        json_input = {
+            "results": [
+                {
+                    "ticker": "AAPL",
+                    "day": {
+                        "close": 150.5,
+                    }
+                }
+            ]
+        }
+        result = json_to_json_filtered(json_input)
+
+        parsed = json.loads(result)
+        assert "day_close" in parsed[0]
+        assert "day" not in parsed[0]
+
+    def test_json_filtered_list_input(self):
+        """Test JSON output with list input."""
+        json_input = [
+            {"ticker": "AAPL", "close": 150.5}
+        ]
+        result = json_to_json_filtered(json_input)
+
+        parsed = json.loads(result)
+        assert len(parsed) == 1
+
+    def test_json_filtered_formatting(self):
+        """Test that JSON is formatted with indentation."""
+        json_input = {
+            "results": [
+                {"ticker": "AAPL"}
+            ]
+        }
+        result = json_to_json_filtered(json_input)
+
+        # Should have indentation
+        assert "\n" in result
+        assert "  " in result

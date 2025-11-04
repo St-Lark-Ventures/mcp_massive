@@ -35,9 +35,33 @@ async def get_aggs(
     sort: Optional[str] = None,
     limit: Optional[int] = 10,
     params: Optional[Dict[str, Any]] = None,
+    # NEW: Output filtering parameters
+    fields: Optional[str] = None,
+    output_format: Optional[str] = "csv",
+    aggregate: Optional[str] = None,
 ) -> str:
     """
     List aggregate bars for a ticker over a given date range in custom time window sizes.
+
+    Output Filtering (NEW):
+        fields: Comma-separated field names (e.g., "ticker,close,volume") or preset name
+                (e.g., "preset:price", "preset:ohlc"). Available presets:
+                - preset:price (ticker, close, timestamp)
+                - preset:ohlc (ticker, open, high, low, close, timestamp)
+                - preset:ohlcv (includes volume)
+                - preset:summary (ticker, close, volume, change_percent)
+        output_format: Response format - "csv" (default), "json", or "compact"
+        aggregate: Return single record - "first", "last", or None for all records
+
+    Examples:
+        # Get only closing prices in compact format
+        fields="close", output_format="compact", aggregate="last"
+
+        # Get OHLC data as JSON
+        fields="preset:ohlc", output_format="json"
+
+        # Get everything as CSV (default/backward compatible behavior)
+        (no filtering params)
     """
     try:
         results = polygon_client.get_aggs(
@@ -53,8 +77,19 @@ async def get_aggs(
             raw=True,
         )
 
-        # Parse the binary data to string and then to JSON
-        return json_to_csv(results.data.decode("utf-8"))
+        # Check if filtering is requested
+        if fields or output_format != "csv" or aggregate:
+            from .filters import parse_filter_params, apply_filters
+
+            filter_options = parse_filter_params(
+                fields=fields,
+                output_format=output_format,
+                aggregate=aggregate,
+            )
+            return apply_filters(results.data.decode("utf-8"), filter_options)
+        else:
+            # Backward compatible: no filtering, use original formatter
+            return json_to_csv(results.data.decode("utf-8"))
     except Exception as e:
         return f"Error: {e}"
 
@@ -200,14 +235,41 @@ async def list_trades(
 async def get_last_trade(
     ticker: str,
     params: Optional[Dict[str, Any]] = None,
+    # NEW: Output filtering parameters
+    fields: Optional[str] = None,
+    output_format: Optional[str] = "csv",
 ) -> str:
     """
     Get the most recent trade for a ticker symbol.
+
+    Output Filtering (NEW):
+        fields: Comma-separated field names (e.g., "price,size") or preset name
+                (e.g., "preset:trade"). Available presets:
+                - preset:trade (price, size, timestamp)
+        output_format: Response format - "csv" (default), "json", or "compact"
+
+    Examples:
+        # Get just the price in compact format
+        fields="price", output_format="compact"
+
+        # Get trade details as JSON
+        fields="preset:trade", output_format="json"
     """
     try:
         results = polygon_client.get_last_trade(ticker=ticker, params=params, raw=True)
 
-        return json_to_csv(results.data.decode("utf-8"))
+        # Check if filtering is requested
+        if fields or output_format != "csv":
+            from .filters import parse_filter_params, apply_filters
+
+            filter_options = parse_filter_params(
+                fields=fields,
+                output_format=output_format,
+            )
+            return apply_filters(results.data.decode("utf-8"), filter_options)
+        else:
+            # Backward compatible: no filtering, use original formatter
+            return json_to_csv(results.data.decode("utf-8"))
     except Exception as e:
         return f"Error: {e}"
 
