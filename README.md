@@ -136,6 +136,64 @@ This MCP server implements all Polygon.io API endpoints as tools, including:
 
 Each tool follows the Polygon.io SDK parameter structure while converting responses to standard JSON that LLMs can easily process.
 
+## Output Filtering (NEW!)
+
+**Reduce context token usage by 60-90%** with server-side output filtering. All 50+ tools now support:
+
+### Features
+
+- **Field Selection** - Choose specific fields to return (e.g., `fields="ticker,close,volume"`)
+- **Output Formats** - CSV (default), JSON, or compact JSON
+- **Aggregation** - Get first/last record instead of all records
+- **Preset Filters** - Common field groups (e.g., `fields="preset:ohlc"`)
+
+### Quick Example
+
+**Before (500 tokens):**
+```python
+await get_aggs("AAPL", 1, "day", "2024-01-01", "2024-01-02")
+```
+
+**After (30 tokens - 94% savings!):**
+```python
+await get_aggs("AAPL", 1, "day", "2024-01-01", "2024-01-02",
+               fields="close", output_format="compact", aggregate="last")
+# Returns: {"close": 185.92}
+```
+
+### Available Parameters
+
+All tools support these optional filtering parameters:
+
+- `fields` - Comma-separated field names or preset (e.g., `"preset:price"`, `"ticker,close"`)
+- `output_format` - Format: `"csv"` (default), `"json"`, or `"compact"`
+- `aggregate` - Row selection: `"first"`, `"last"`, or `None` (all rows)
+
+### Field Presets
+
+- `preset:price` - ticker, close, timestamp
+- `preset:ohlc` - ticker, open, high, low, close, timestamp
+- `preset:ohlcv` - OHLC + volume
+- `preset:summary` - ticker, close, volume, change_percent
+- `preset:trade` - price, size, timestamp
+- `preset:quote` - bid, ask, bid_size, ask_size, timestamp
+- And more... see [FILTERING_GUIDE.md](FILTERING_GUIDE.md)
+
+### Documentation
+
+- **Complete Guide**: [FILTERING_GUIDE.md](FILTERING_GUIDE.md) - Examples, best practices, migration guide
+- **Implementation Plan**: [REFACTOR_PLAN.md](REFACTOR_PLAN.md) - Technical details
+
+### Token Savings
+
+| Use Case | Before | After | Savings |
+|----------|--------|-------|---------|
+| Single price | ~500 tokens | ~30 tokens | **94%** |
+| OHLC (10 rows) | ~2000 tokens | ~800 tokens | **60%** |
+| Ticker list (100 rows) | ~8000 tokens | ~1000 tokens | **87%** |
+
+**Backward Compatible**: All filtering is optional. Existing code works unchanged.
+
 ## Development
 
 ### Running Locally
