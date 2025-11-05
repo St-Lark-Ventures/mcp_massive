@@ -14,7 +14,7 @@ if not POLYGON_API_KEY:
 
 version_number = "MCP-Polygon/unknown"
 try:
-    version_number = f"MCP-Polygon/{version('mcp_polygon')}"
+    version_number = f"MCP-Polygon/{version('mcp_massive')}"
 except PackageNotFoundError:
     pass
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 import os
 from typing import Literal
-from mcp_polygon import server
+from mcp_massive import server
 
 
 def transport() -> Literal["stdio", "sse", "streamable-http"]:

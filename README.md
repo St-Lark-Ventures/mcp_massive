@@ -14,7 +14,7 @@
 
 # Polygon.io MCP Server
 
- [![GitHub release](https://img.shields.io/github/v/release/polygon-io/mcp_polygon)](https://github.com/polygon-io/mcp_polygon/releases)
+ [![GitHub release](https://img.shields.io/github/v/release/polygon-io/mcp_massive)](https://github.com/polygon-io/mcp_massive/releases)
 
 A [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server that provides access to [Polygon.io](https://polygon.io?utm_campaign=mcp&utm_medium=referral&utm_source=github) financial market data API through an LLM-friendly interface.
 
@@ -52,7 +52,7 @@ path to `uvx`.
 
 ```bash
 # Claude CLI
-claude mcp add polygon -e POLYGON_API_KEY=your_api_key_here -- uvx --from git+https://github.com/polygon-io/mcp_polygon@v0.5.1 mcp_polygon
+claude mcp add polygon -e POLYGON_API_KEY=your_api_key_here -- uvx --from git+https://github.com/polygon-io/mcp_massive@v0.5.1 mcp_massive
 ```
 
 This command will install the MCP server in your current project.
@@ -83,8 +83,8 @@ Make sure you complete the various fields.
             "command": "<path_to_your_uvx_install>/uvx",
             "args": [
                 "--from",
-                "git+https://github.com/polygon-io/mcp_polygon@v0.5.1",
-                "mcp_polygon"
+                "git+https://github.com/polygon-io/mcp_massive@v0.5.1",
+                "mcp_massive"
             ],
             "env": {
                 "POLYGON_API_KEY": "<your_api_key_here>",
@@ -147,7 +147,7 @@ Check to ensure you have the [Prerequisites](#prerequisites) installed.
 uv sync
 
 # Run the server
-POLYGON_API_KEY=your_api_key_here uv run mcp_polygon
+POLYGON_API_KEY=your_api_key_here uv run mcp_massive
 ```
 
 <details>
@@ -161,8 +161,8 @@ POLYGON_API_KEY=your_api_key_here uv run mcp_polygon
       "args": [
         "run",
         "--with",
-        "/your/path/mcp_polygon",
-        "mcp_polygon"
+        "/your/path/mcp_massive",
+        "mcp_massive"
       ],
       "env": {
         "POLYGON_API_KEY": "your_api_key_here",
@@ -178,7 +178,7 @@ POLYGON_API_KEY=your_api_key_here uv run mcp_polygon
 For debugging and testing, we recommend using the [MCP Inspector](https://github.com/modelcontextprotocol/inspector):
 
 ```bash
-npx @modelcontextprotocol/inspector uv --directory /path/to/mcp_polygon run mcp_polygon
+npx @modelcontextprotocol/inspector uv --directory /path/to/mcp_massive run mcp_massive
 ```
 
 This will launch a browser interface where you can interact with your MCP server directly and see input/output for each tool.
