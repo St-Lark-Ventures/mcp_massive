@@ -209,7 +209,7 @@ cli = [
 ]
 
 [[package]]
-name = "mcp-polygon"
+name = "mcp-massive"
 version = "0.5.1"
 source = { editable = "." }
 dependencies = [

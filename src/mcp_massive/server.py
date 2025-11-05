@@ -12,19 +12,19 @@ POLYGON_API_KEY = os.environ.get("POLYGON_API_KEY", "")
 if not POLYGON_API_KEY:
     print("Warning: POLYGON_API_KEY environment variable not set.")
 
-version_number = "MCP-Polygon/unknown"
+version_number = "MCP-Massive/unknown"
 try:
-    version_number = f"MCP-Polygon/{version('mcp_massive')}"
+    version_number = f"MCP-Massive/{version('mcp_massive')}"
 except PackageNotFoundError:
     pass
 
-polygon_client = RESTClient(POLYGON_API_KEY)
-polygon_client.headers["User-Agent"] += f" {version_number}"
+massive_client = RESTClient(POLYGON_API_KEY)
+massive_client.headers["User-Agent"] += f" {version_number}"
 
-poly_mcp = FastMCP("Polygon", dependencies=["polygon"])
+massive_mcp = FastMCP("Massive", dependencies=["polygon"])
 
 
-@poly_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+@massive_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def get_aggs(
     ticker: str,
     multiplier: int,
@@ -40,7 +40,7 @@ async def get_aggs(
     List aggregate bars for a ticker over a given date range in custom time window sizes.
     """
     try:
-        results = polygon_client.get_aggs(
+        results = massive_client.get_aggs(
             ticker=ticker,
             multiplier=multiplier,
             timespan=timespan,
@@ -59,7 +59,7 @@ async def get_aggs(
         return f"Error: {e}"
 
 
-@poly_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+@massive_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def list_aggs(
     ticker: str,
     multiplier: int,
@@ -75,7 +75,7 @@ async def list_aggs(
     Iterate through aggregate bars for a ticker over a given date range.
     """
     try:
-        results = polygon_client.list_aggs(
+        results = massive_client.list_aggs(
             ticker=ticker,
             multiplier=multiplier,
             timespan=timespan,
@@ -93,7 +93,7 @@ async def list_aggs(
         return f"Error: {e}"
 
 
-@poly_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+@massive_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def get_grouped_daily_aggs(
     date: str,
     adjusted: Optional[bool] = None,
@@ -106,7 +106,7 @@ async def get_grouped_daily_aggs(
     Get grouped daily bars for entire market for a specific date.
     """
     try:
-        results = polygon_client.get_grouped_daily_aggs(
+        results = massive_client.get_grouped_daily_aggs(
             date=date,
             adjusted=adjusted,
             include_otc=include_otc,
@@ -121,7 +121,7 @@ async def get_grouped_daily_aggs(
         return f"Error: {e}"
 
 
-@poly_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+@massive_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def get_daily_open_close_agg(
     ticker: str,
     date: str,
@@ -132,7 +132,7 @@ async def get_daily_open_close_agg(
     Get daily open, close, high, and low for a specific ticker and date.
     """
     try:
-        results = polygon_client.get_daily_open_close_agg(
+        results = massive_client.get_daily_open_close_agg(
             ticker=ticker, date=date, adjusted=adjusted, params=params, raw=True
         )
 
@@ -141,7 +141,7 @@ async def get_daily_open_close_agg(
         return f"Error: {e}"
 
 
-@poly_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+@massive_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def get_previous_close_agg(
     ticker: str,
     adjusted: Optional[bool] = None,
@@ -151,7 +151,7 @@ async def get_previous_close_agg(
     Get previous day's open, close, high, and low for a specific ticker.
     """
     try:
-        results = polygon_client.get_previous_close_agg(
+        results = massive_client.get_previous_close_agg(
             ticker=ticker, adjusted=adjusted, params=params, raw=True
         )
 
@@ -160,7 +160,7 @@ async def get_previous_close_agg(
         return f"Error: {e}"
 
 
-@poly_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+@massive_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def list_trades(
     ticker: str,
     timestamp: Optional[Union[str, int, datetime, date]] = None,
@@ -177,7 +177,7 @@ async def list_trades(
     Get trades for a ticker symbol.
     """
     try:
-        results = polygon_client.list_trades(
+        results = massive_client.list_trades(
             ticker=ticker,
             timestamp=timestamp,
             timestamp_lt=timestamp_lt,
@@ -196,7 +196,7 @@ async def list_trades(
         return f"Error: {e}"
 
 
-@poly_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+@massive_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def get_last_trade(
     ticker: str,
     params: Optional[Dict[str, Any]] = None,
@@ -205,14 +205,14 @@ async def get_last_trade(
     Get the most recent trade for a ticker symbol.
     """
     try:
-        results = polygon_client.get_last_trade(ticker=ticker, params=params, raw=True)
+        results = massive_client.get_last_trade(ticker=ticker, params=params, raw=True)
 
         return json_to_csv(results.data.decode("utf-8"))
     except Exception as e:
         return f"Error: {e}"
 
 
-@poly_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+@massive_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def get_last_crypto_trade(
     from_: str,
     to: str,
@@ -222,7 +222,7 @@ async def get_last_crypto_trade(
     Get the most recent trade for a crypto pair.
     """
     try:
-        results = polygon_client.get_last_crypto_trade(
+        results = massive_client.get_last_crypto_trade(
             from_=from_, to=to, params=params, raw=True
         )
 
@@ -231,7 +231,7 @@ async def get_last_crypto_trade(
         return f"Error: {e}"
 
 
-@poly_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+@massive_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def list_quotes(
     ticker: str,
     timestamp: Optional[Union[str, int, datetime, date]] = None,
@@ -248,7 +248,7 @@ async def list_quotes(
     Get quotes for a ticker symbol.
     """
     try:
-        results = polygon_client.list_quotes(
+        results = massive_client.list_quotes(
             ticker=ticker,
             timestamp=timestamp,
             timestamp_lt=timestamp_lt,
@@ -267,7 +267,7 @@ async def list_quotes(
         return f"Error: {e}"
 
 
-@poly_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+@massive_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def get_last_quote(
     ticker: str,
     params: Optional[Dict[str, Any]] = None,
@@ -276,14 +276,14 @@ async def get_last_quote(
     Get the most recent quote for a ticker symbol.
     """
     try:
-        results = polygon_client.get_last_quote(ticker=ticker, params=params, raw=True)
+        results = massive_client.get_last_quote(ticker=ticker, params=params, raw=True)
 
         return json_to_csv(results.data.decode("utf-8"))
     except Exception as e:
         return f"Error: {e}"
 
 
-@poly_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+@massive_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def get_last_forex_quote(
     from_: str,
     to: str,
@@ -293,7 +293,7 @@ async def get_last_forex_quote(
     Get the most recent forex quote.
     """
     try:
-        results = polygon_client.get_last_forex_quote(
+        results = massive_client.get_last_forex_quote(
             from_=from_, to=to, params=params, raw=True
         )
 
@@ -302,7 +302,7 @@ async def get_last_forex_quote(
         return f"Error: {e}"
 
 
-@poly_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+@massive_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def get_real_time_currency_conversion(
     from_: str,
     to: str,
@@ -314,7 +314,7 @@ async def get_real_time_currency_conversion(
     Get real-time currency conversion.
     """
     try:
-        results = polygon_client.get_real_time_currency_conversion(
+        results = massive_client.get_real_time_currency_conversion(
             from_=from_,
             to=to,
             amount=amount,
@@ -328,7 +328,7 @@ async def get_real_time_currency_conversion(
         return f"Error: {e}"
 
 
-@poly_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+@massive_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def list_universal_snapshots(
     type: str,
     ticker_any_of: Optional[List[str]] = None,
@@ -341,7 +341,7 @@ async def list_universal_snapshots(
     Get universal snapshots for multiple assets of a specific type.
     """
     try:
-        results = polygon_client.list_universal_snapshots(
+        results = massive_client.list_universal_snapshots(
             type=type,
             ticker_any_of=ticker_any_of,
             order=order,
@@ -356,7 +356,7 @@ async def list_universal_snapshots(
         return f"Error: {e}"
 
 
-@poly_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+@massive_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def get_snapshot_all(
     market_type: str,
     tickers: Optional[List[str]] = None,
@@ -367,7 +367,7 @@ async def get_snapshot_all(
     Get a snapshot of all tickers in a market.
     """
     try:
-        results = polygon_client.get_snapshot_all(
+        results = massive_client.get_snapshot_all(
             market_type=market_type,
             tickers=tickers,
             include_otc=include_otc,
@@ -380,7 +380,7 @@ async def get_snapshot_all(
         return f"Error: {e}"
 
 
-@poly_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+@massive_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def get_snapshot_direction(
     market_type: str,
     direction: str,
@@ -391,7 +391,7 @@ async def get_snapshot_direction(
     Get gainers or losers for a market.
     """
     try:
-        results = polygon_client.get_snapshot_direction(
+        results = massive_client.get_snapshot_direction(
             market_type=market_type,
             direction=direction,
             include_otc=include_otc,
@@ -404,7 +404,7 @@ async def get_snapshot_direction(
         return f"Error: {e}"
 
 
-@poly_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+@massive_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def get_snapshot_ticker(
     market_type: str,
     ticker: str,
@@ -414,7 +414,7 @@ async def get_snapshot_ticker(
     Get snapshot for a specific ticker.
     """
     try:
-        results = polygon_client.get_snapshot_ticker(
+        results = massive_client.get_snapshot_ticker(
             market_type=market_type, ticker=ticker, params=params, raw=True
         )
 
@@ -423,7 +423,7 @@ async def get_snapshot_ticker(
         return f"Error: {e}"
 
 
-@poly_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+@massive_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def get_snapshot_option(
     underlying_asset: str,
     option_contract: str,
@@ -433,7 +433,7 @@ async def get_snapshot_option(
     Get snapshot for a specific option contract.
     """
     try:
-        results = polygon_client.get_snapshot_option(
+        results = massive_client.get_snapshot_option(
             underlying_asset=underlying_asset,
             option_contract=option_contract,
             params=params,
@@ -445,7 +445,7 @@ async def get_snapshot_option(
         return f"Error: {e}"
 
 
-@poly_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+@massive_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def get_snapshot_crypto_book(
     ticker: str,
     params: Optional[Dict[str, Any]] = None,
@@ -454,7 +454,7 @@ async def get_snapshot_crypto_book(
     Get snapshot for a crypto ticker's order book.
     """
     try:
-        results = polygon_client.get_snapshot_crypto_book(
+        results = massive_client.get_snapshot_crypto_book(
             ticker=ticker, params=params, raw=True
         )
 
@@ -463,7 +463,7 @@ async def get_snapshot_crypto_book(
         return f"Error: {e}"
 
 
-@poly_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+@massive_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def get_market_holidays(
     params: Optional[Dict[str, Any]] = None,
 ) -> str:
@@ -471,14 +471,14 @@ async def get_market_holidays(
     Get upcoming market holidays and their open/close times.
     """
     try:
-        results = polygon_client.get_market_holidays(params=params, raw=True)
+        results = massive_client.get_market_holidays(params=params, raw=True)
 
         return json_to_csv(results.data.decode("utf-8"))
     except Exception as e:
         return f"Error: {e}"
 
 
-@poly_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+@massive_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def get_market_status(
     params: Optional[Dict[str, Any]] = None,
 ) -> str:
@@ -486,14 +486,14 @@ async def get_market_status(
     Get current trading status of exchanges and financial markets.
     """
     try:
-        results = polygon_client.get_market_status(params=params, raw=True)
+        results = massive_client.get_market_status(params=params, raw=True)
 
         return json_to_csv(results.data.decode("utf-8"))
     except Exception as e:
         return f"Error: {e}"
 
 
-@poly_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+@massive_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def list_tickers(
     ticker: Optional[str] = None,
     type: Optional[str] = None,
@@ -513,7 +513,7 @@ async def list_tickers(
     Query supported ticker symbols across stocks, indices, forex, and crypto.
     """
     try:
-        results = polygon_client.list_tickers(
+        results = massive_client.list_tickers(
             ticker=ticker,
             type=type,
             market=market,
@@ -535,7 +535,7 @@ async def list_tickers(
         return f"Error: {e}"
 
 
-@poly_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+@massive_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def get_ticker_details(
     ticker: str,
     date: Optional[Union[str, datetime, date]] = None,
@@ -545,7 +545,7 @@ async def get_ticker_details(
     Get detailed information about a specific ticker.
     """
     try:
-        results = polygon_client.get_ticker_details(
+        results = massive_client.get_ticker_details(
             ticker=ticker, date=date, params=params, raw=True
         )
 
@@ -554,7 +554,7 @@ async def get_ticker_details(
         return f"Error: {e}"
 
 
-@poly_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+@massive_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def list_ticker_news(
     ticker: Optional[str] = None,
     published_utc: Optional[Union[str, datetime, date]] = None,
@@ -567,7 +567,7 @@ async def list_ticker_news(
     Get recent news articles for a stock ticker.
     """
     try:
-        results = polygon_client.list_ticker_news(
+        results = massive_client.list_ticker_news(
             ticker=ticker,
             published_utc=published_utc,
             limit=limit,
@@ -582,7 +582,7 @@ async def list_ticker_news(
         return f"Error: {e}"
 
 
-@poly_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+@massive_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def get_ticker_types(
     asset_class: Optional[str] = None,
     locale: Optional[str] = None,
@@ -592,7 +592,7 @@ async def get_ticker_types(
     List all ticker types supported by Polygon.io.
     """
     try:
-        results = polygon_client.get_ticker_types(
+        results = massive_client.get_ticker_types(
             asset_class=asset_class, locale=locale, params=params, raw=True
         )
 
@@ -601,7 +601,7 @@ async def get_ticker_types(
         return f"Error: {e}"
 
 
-@poly_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+@massive_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def list_splits(
     ticker: Optional[str] = None,
     execution_date: Optional[Union[str, datetime, date]] = None,
@@ -613,7 +613,7 @@ async def list_splits(
     Get historical stock splits.
     """
     try:
-        results = polygon_client.list_splits(
+        results = massive_client.list_splits(
             ticker=ticker,
             execution_date=execution_date,
             reverse_split=reverse_split,
@@ -627,7 +627,7 @@ async def list_splits(
         return f"Error: {e}"
 
 
-@poly_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+@massive_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def list_dividends(
     ticker: Optional[str] = None,
     ex_dividend_date: Optional[Union[str, datetime, date]] = None,
@@ -640,7 +640,7 @@ async def list_dividends(
     Get historical cash dividends.
     """
     try:
-        results = polygon_client.list_dividends(
+        results = massive_client.list_dividends(
             ticker=ticker,
             ex_dividend_date=ex_dividend_date,
             frequency=frequency,
@@ -655,7 +655,7 @@ async def list_dividends(
         return f"Error: {e}"
 
 
-@poly_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+@massive_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def list_conditions(
     asset_class: Optional[str] = None,
     data_type: Optional[str] = None,
@@ -667,7 +667,7 @@ async def list_conditions(
     List conditions used by Polygon.io.
     """
     try:
-        results = polygon_client.list_conditions(
+        results = massive_client.list_conditions(
             asset_class=asset_class,
             data_type=data_type,
             id=id,
@@ -681,7 +681,7 @@ async def list_conditions(
         return f"Error: {e}"
 
 
-@poly_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+@massive_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def get_exchanges(
     asset_class: Optional[str] = None,
     locale: Optional[str] = None,
@@ -691,7 +691,7 @@ async def get_exchanges(
     List exchanges known by Polygon.io.
     """
     try:
-        results = polygon_client.get_exchanges(
+        results = massive_client.get_exchanges(
             asset_class=asset_class, locale=locale, params=params, raw=True
         )
 
@@ -700,7 +700,7 @@ async def get_exchanges(
         return f"Error: {e}"
 
 
-@poly_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+@massive_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def list_stock_financials(
     ticker: Optional[str] = None,
     cik: Optional[str] = None,
@@ -728,7 +728,7 @@ async def list_stock_financials(
     Get fundamental financial data for companies.
     """
     try:
-        results = polygon_client.vx.list_stock_financials(
+        results = massive_client.vx.list_stock_financials(
             ticker=ticker,
             cik=cik,
             company_name=company_name,
@@ -758,7 +758,7 @@ async def list_stock_financials(
         return f"Error: {e}"
 
 
-@poly_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+@massive_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def list_ipos(
     ticker: Optional[str] = None,
     listing_date: Optional[Union[str, datetime, date]] = None,
@@ -776,7 +776,7 @@ async def list_ipos(
     Retrieve upcoming or historical IPOs.
     """
     try:
-        results = polygon_client.vx.list_ipos(
+        results = massive_client.vx.list_ipos(
             ticker=ticker,
             listing_date=listing_date,
             listing_date_lt=listing_date_lt,
@@ -796,7 +796,7 @@ async def list_ipos(
         return f"Error: {e}"
 
 
-@poly_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+@massive_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def list_short_interest(
     ticker: Optional[str] = None,
     settlement_date: Optional[Union[str, datetime, date]] = None,
@@ -813,7 +813,7 @@ async def list_short_interest(
     Retrieve short interest data for stocks.
     """
     try:
-        results = polygon_client.list_short_interest(
+        results = massive_client.list_short_interest(
             ticker=ticker,
             settlement_date=settlement_date,
             settlement_date_lt=settlement_date_lt,
@@ -832,7 +832,7 @@ async def list_short_interest(
         return f"Error: {e}"
 
 
-@poly_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+@massive_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def list_short_volume(
     ticker: Optional[str] = None,
     date: Optional[Union[str, datetime, date]] = None,
@@ -849,7 +849,7 @@ async def list_short_volume(
     Retrieve short volume data for stocks.
     """
     try:
-        results = polygon_client.list_short_volume(
+        results = massive_client.list_short_volume(
             ticker=ticker,
             date=date,
             date_lt=date_lt,
@@ -868,7 +868,7 @@ async def list_short_volume(
         return f"Error: {e}"
 
 
-@poly_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+@massive_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def list_treasury_yields(
     date: Optional[Union[str, datetime, date]] = None,
     date_any_of: Optional[str] = None,
@@ -885,7 +885,7 @@ async def list_treasury_yields(
     Retrieve treasury yield data.
     """
     try:
-        results = polygon_client.list_treasury_yields(
+        results = massive_client.list_treasury_yields(
             date=date,
             date_lt=date_lt,
             date_lte=date_lte,
@@ -903,7 +903,7 @@ async def list_treasury_yields(
         return f"Error: {e}"
 
 
-@poly_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+@massive_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def list_inflation(
     date: Optional[Union[str, datetime, date]] = None,
     date_any_of: Optional[str] = None,
@@ -919,7 +919,7 @@ async def list_inflation(
     Get inflation data from the Federal Reserve.
     """
     try:
-        results = polygon_client.list_inflation(
+        results = massive_client.list_inflation(
             date=date,
             date_any_of=date_any_of,
             date_gt=date_gt,
@@ -937,7 +937,7 @@ async def list_inflation(
         return f"Error: {e}"
 
 
-@poly_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+@massive_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def list_benzinga_analyst_insights(
     date: Optional[Union[str, date]] = None,
     date_any_of: Optional[str] = None,
@@ -989,7 +989,7 @@ async def list_benzinga_analyst_insights(
     List Benzinga analyst insights.
     """
     try:
-        results = polygon_client.list_benzinga_analyst_insights(
+        results = massive_client.list_benzinga_analyst_insights(
             date=date,
             date_any_of=date_any_of,
             date_gt=date_gt,
@@ -1043,7 +1043,7 @@ async def list_benzinga_analyst_insights(
         return f"Error: {e}"
 
 
-@poly_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+@massive_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def list_benzinga_analysts(
     benzinga_id: Optional[str] = None,
     benzinga_id_any_of: Optional[str] = None,
@@ -1077,7 +1077,7 @@ async def list_benzinga_analysts(
     List Benzinga analysts.
     """
     try:
-        results = polygon_client.list_benzinga_analysts(
+        results = massive_client.list_benzinga_analysts(
             benzinga_id=benzinga_id,
             benzinga_id_any_of=benzinga_id_any_of,
             benzinga_id_gt=benzinga_id_gt,
@@ -1113,7 +1113,7 @@ async def list_benzinga_analysts(
         return f"Error: {e}"
 
 
-@poly_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+@massive_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def list_benzinga_consensus_ratings(
     ticker: str,
     date: Optional[Union[str, date]] = None,
@@ -1128,7 +1128,7 @@ async def list_benzinga_consensus_ratings(
     List Benzinga consensus ratings for a ticker.
     """
     try:
-        results = polygon_client.list_benzinga_consensus_ratings(
+        results = massive_client.list_benzinga_consensus_ratings(
             ticker=ticker,
             date=date,
             date_gt=date_gt,
@@ -1145,7 +1145,7 @@ async def list_benzinga_consensus_ratings(
         return f"Error: {e}"
 
 
-@poly_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+@massive_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def list_benzinga_earnings(
     date: Optional[Union[str, date]] = None,
     date_any_of: Optional[str] = None,
@@ -1209,7 +1209,7 @@ async def list_benzinga_earnings(
     List Benzinga earnings.
     """
     try:
-        results = polygon_client.list_benzinga_earnings(
+        results = massive_client.list_benzinga_earnings(
             date=date,
             date_any_of=date_any_of,
             date_gt=date_gt,
@@ -1275,7 +1275,7 @@ async def list_benzinga_earnings(
         return f"Error: {e}"
 
 
-@poly_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+@massive_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def list_benzinga_firms(
     benzinga_id: Optional[str] = None,
     benzinga_id_any_of: Optional[str] = None,
@@ -1291,7 +1291,7 @@ async def list_benzinga_firms(
     List Benzinga firms.
     """
     try:
-        results = polygon_client.list_benzinga_firms(
+        results = massive_client.list_benzinga_firms(
             benzinga_id=benzinga_id,
             benzinga_id_any_of=benzinga_id_any_of,
             benzinga_id_gt=benzinga_id_gt,
@@ -1309,7 +1309,7 @@ async def list_benzinga_firms(
         return f"Error: {e}"
 
 
-@poly_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+@massive_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def list_benzinga_guidance(
     date: Optional[Union[str, date]] = None,
     date_any_of: Optional[str] = None,
@@ -1361,7 +1361,7 @@ async def list_benzinga_guidance(
     List Benzinga guidance.
     """
     try:
-        results = polygon_client.list_benzinga_guidance(
+        results = massive_client.list_benzinga_guidance(
             date=date,
             date_any_of=date_any_of,
             date_gt=date_gt,
@@ -1415,7 +1415,7 @@ async def list_benzinga_guidance(
         return f"Error: {e}"
 
 
-@poly_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+@massive_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def list_benzinga_news(
     published: Optional[str] = None,
     published_any_of: Optional[str] = None,
@@ -1452,7 +1452,7 @@ async def list_benzinga_news(
     List Benzinga news.
     """
     try:
-        results = polygon_client.list_benzinga_news(
+        results = massive_client.list_benzinga_news(
             published=published,
             published_any_of=published_any_of,
             published_gt=published_gt,
@@ -1491,7 +1491,7 @@ async def list_benzinga_news(
         return f"Error: {e}"
 
 
-@poly_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+@massive_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def list_benzinga_ratings(
     date: Optional[Union[str, date]] = None,
     date_any_of: Optional[str] = None,
@@ -1555,7 +1555,7 @@ async def list_benzinga_ratings(
     List Benzinga ratings.
     """
     try:
-        results = polygon_client.list_benzinga_ratings(
+        results = massive_client.list_benzinga_ratings(
             date=date,
             date_any_of=date_any_of,
             date_gt=date_gt,
@@ -1621,7 +1621,7 @@ async def list_benzinga_ratings(
         return f"Error: {e}"
 
 
-@poly_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+@massive_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def list_futures_aggregates(
     ticker: str,
     resolution: str,
@@ -1638,7 +1638,7 @@ async def list_futures_aggregates(
     Get aggregates for a futures contract in a given time range.
     """
     try:
-        results = polygon_client.list_futures_aggregates(
+        results = massive_client.list_futures_aggregates(
             ticker=ticker,
             resolution=resolution,
             window_start=window_start,
@@ -1657,7 +1657,7 @@ async def list_futures_aggregates(
         return f"Error: {e}"
 
 
-@poly_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+@massive_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def list_futures_contracts(
     product_code: Optional[str] = None,
     first_trade_date: Optional[Union[str, date]] = None,
@@ -1673,7 +1673,7 @@ async def list_futures_contracts(
     Get a paginated list of futures contracts.
     """
     try:
-        results = polygon_client.list_futures_contracts(
+        results = massive_client.list_futures_contracts(
             product_code=product_code,
             first_trade_date=first_trade_date,
             last_trade_date=last_trade_date,
@@ -1691,7 +1691,7 @@ async def list_futures_contracts(
         return f"Error: {e}"
 
 
-@poly_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+@massive_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def get_futures_contract_details(
     ticker: str,
     as_of: Optional[Union[str, date]] = None,
@@ -1701,7 +1701,7 @@ async def get_futures_contract_details(
     Get details for a single futures contract at a specified point in time.
     """
     try:
-        results = polygon_client.get_futures_contract_details(
+        results = massive_client.get_futures_contract_details(
             ticker=ticker,
             as_of=as_of,
             params=params,
@@ -1713,7 +1713,7 @@ async def get_futures_contract_details(
         return f"Error: {e}"
 
 
-@poly_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+@massive_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def list_futures_products(
     name: Optional[str] = None,
     name_search: Optional[str] = None,
@@ -1732,7 +1732,7 @@ async def list_futures_products(
     Get a list of futures products (including combos).
     """
     try:
-        results = polygon_client.list_futures_products(
+        results = massive_client.list_futures_products(
             name=name,
             name_search=name_search,
             as_of=as_of,
@@ -1753,7 +1753,7 @@ async def list_futures_products(
         return f"Error: {e}"
 
 
-@poly_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+@massive_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def get_futures_product_details(
     product_code: str,
     type: Optional[str] = None,
@@ -1764,7 +1764,7 @@ async def get_futures_product_details(
     Get details for a single futures product as it was at a specific day.
     """
     try:
-        results = polygon_client.get_futures_product_details(
+        results = massive_client.get_futures_product_details(
             product_code=product_code,
             type=type,
             as_of=as_of,
@@ -1777,7 +1777,7 @@ async def get_futures_product_details(
         return f"Error: {e}"
 
 
-@poly_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+@massive_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def list_futures_quotes(
     ticker: str,
     timestamp: Optional[str] = None,
@@ -1798,7 +1798,7 @@ async def list_futures_quotes(
     Get quotes for a futures contract in a given time range.
     """
     try:
-        results = polygon_client.list_futures_quotes(
+        results = massive_client.list_futures_quotes(
             ticker=ticker,
             timestamp=timestamp,
             timestamp_lt=timestamp_lt,
@@ -1821,7 +1821,7 @@ async def list_futures_quotes(
         return f"Error: {e}"
 
 
-@poly_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+@massive_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def list_futures_trades(
     ticker: str,
     timestamp: Optional[str] = None,
@@ -1842,7 +1842,7 @@ async def list_futures_trades(
     Get trades for a futures contract in a given time range.
     """
     try:
-        results = polygon_client.list_futures_trades(
+        results = massive_client.list_futures_trades(
             ticker=ticker,
             timestamp=timestamp,
             timestamp_lt=timestamp_lt,
@@ -1865,7 +1865,7 @@ async def list_futures_trades(
         return f"Error: {e}"
 
 
-@poly_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+@massive_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def list_futures_schedules(
     session_end_date: Optional[str] = None,
     trading_venue: Optional[str] = None,
@@ -1877,7 +1877,7 @@ async def list_futures_schedules(
     Get trading schedules for multiple futures products on a specific date.
     """
     try:
-        results = polygon_client.list_futures_schedules(
+        results = massive_client.list_futures_schedules(
             session_end_date=session_end_date,
             trading_venue=trading_venue,
             limit=limit,
@@ -1891,7 +1891,7 @@ async def list_futures_schedules(
         return f"Error: {e}"
 
 
-@poly_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+@massive_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def list_futures_schedules_by_product_code(
     product_code: str,
     session_end_date: Optional[str] = None,
@@ -1907,7 +1907,7 @@ async def list_futures_schedules_by_product_code(
     Get schedule data for a single futures product across many trading dates.
     """
     try:
-        results = polygon_client.list_futures_schedules_by_product_code(
+        results = massive_client.list_futures_schedules_by_product_code(
             product_code=product_code,
             session_end_date=session_end_date,
             session_end_date_lt=session_end_date_lt,
@@ -1925,7 +1925,7 @@ async def list_futures_schedules_by_product_code(
         return f"Error: {e}"
 
 
-@poly_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+@massive_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def list_futures_market_statuses(
     product_code_any_of: Optional[str] = None,
     product_code: Optional[str] = None,
@@ -1937,7 +1937,7 @@ async def list_futures_market_statuses(
     Get market statuses for futures products.
     """
     try:
-        results = polygon_client.list_futures_market_statuses(
+        results = massive_client.list_futures_market_statuses(
             product_code_any_of=product_code_any_of,
             product_code=product_code,
             limit=limit,
@@ -1951,7 +1951,7 @@ async def list_futures_market_statuses(
         return f"Error: {e}"
 
 
-@poly_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+@massive_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def get_futures_snapshot(
     ticker: Optional[str] = None,
     ticker_any_of: Optional[str] = None,
@@ -1973,7 +1973,7 @@ async def get_futures_snapshot(
     Get snapshots for futures contracts.
     """
     try:
-        results = polygon_client.get_futures_snapshot(
+        results = massive_client.get_futures_snapshot(
             ticker=ticker,
             ticker_any_of=ticker_any_of,
             ticker_gt=ticker_gt,
@@ -2002,5 +2002,5 @@ async def get_futures_snapshot(
 
 
 def run(transport: Literal["stdio", "sse", "streamable-http"] = "stdio") -> None:
-    """Run the Polygon MCP server."""
-    poly_mcp.run(transport)
+    """Run the Massive MCP server."""
+    massive_mcp.run(transport)

@@ -27,7 +27,7 @@ def start_server():
     if not polygon_api_key:
         print("Warning: POLYGON_API_KEY environment variable not set.")
     else:
-        print("Starting Polygon MCP server with API key configured.")
+        print("Starting Massive MCP server with API key configured.")
 
     server.run(transport=transport())
 
