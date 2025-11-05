@@ -9,8 +9,8 @@ dependencies = [
  "polygon-api-client>=1.15.4",
 ]
 [[project.authors]]
-name = "Polygon"
-email = "support@polygon.io"
+name = "Massive"
+email = "support@massive.com"
 
 [build-system]
 requires = [ "hatchling",]

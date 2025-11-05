@@ -5,6 +5,6 @@ services:
       - .:/app
     container_name: mcp_massive_server
     environment:
-      - POLYGON_API_KEY=${POLYGON_API_KEY}
+      - MASSIVE_API_KEY=${MASSIVE_API_KEY}
     stdin_open: true
     tty: true

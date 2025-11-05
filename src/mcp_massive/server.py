@@ -8,9 +8,9 @@ from .formatters import json_to_csv
 
 from datetime import datetime, date
 
-POLYGON_API_KEY = os.environ.get("POLYGON_API_KEY", "")
-if not POLYGON_API_KEY:
-    print("Warning: POLYGON_API_KEY environment variable not set.")
+MASSIVE_API_KEY = os.environ.get("MASSIVE_API_KEY", "")
+if not MASSIVE_API_KEY:
+    print("Warning: MASSIVE_API_KEY environment variable not set.")
 
 version_number = "MCP-Massive/unknown"
 try:
@@ -18,7 +18,7 @@ try:
 except PackageNotFoundError:
     pass
 
-massive_client = RESTClient(POLYGON_API_KEY)
+massive_client = RESTClient(MASSIVE_API_KEY)
 massive_client.headers["User-Agent"] += f" {version_number}"
 
 massive_mcp = FastMCP("Massive", dependencies=["polygon"])

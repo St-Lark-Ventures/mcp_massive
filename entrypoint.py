@@ -23,9 +23,9 @@ def transport() -> Literal["stdio", "sse", "streamable-http"]:
 
 # Ensure the server process doesn't exit immediately when run as an MCP server
 def start_server():
-    polygon_api_key = os.environ.get("POLYGON_API_KEY", "")
-    if not polygon_api_key:
-        print("Warning: POLYGON_API_KEY environment variable not set.")
+    massive_api_key = os.environ.get("MASSIVE_API_KEY", "")
+    if not massive_api_key:
+        print("Warning: MASSIVE_API_KEY environment variable not set.")
     else:
         print("Starting Massive MCP server with API key configured.")
 
