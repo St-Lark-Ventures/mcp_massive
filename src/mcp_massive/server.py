@@ -8,6 +8,40 @@ from .formatters import json_to_csv
 
 from datetime import datetime, date
 
+
+def _apply_output_filtering(
+    raw_data: bytes,
+    fields: Optional[str] = None,
+    output_format: str = "csv",
+    aggregate: Optional[str] = None,
+) -> str:
+    """
+    Helper function to apply output filtering to API responses.
+
+    Args:
+        raw_data: Raw bytes from API response
+        fields: Field selection (comma-separated or preset)
+        output_format: Output format (csv, json, compact)
+        aggregate: Aggregation method (first, last)
+
+    Returns:
+        Filtered and formatted string response
+    """
+    # Check if filtering is requested
+    if fields or output_format != "csv" or aggregate:
+        from .filters import parse_filter_params, apply_filters
+
+        filter_options = parse_filter_params(
+            fields=fields,
+            output_format=output_format,
+            aggregate=aggregate,
+        )
+        return apply_filters(raw_data.decode("utf-8"), filter_options)
+    else:
+        # Backward compatible: no filtering, use original formatter
+        return json_to_csv(raw_data.decode("utf-8"))
+
+
 MASSIVE_API_KEY = os.environ.get("MASSIVE_API_KEY", "")
 if not MASSIVE_API_KEY:
     print("Warning: MASSIVE_API_KEY environment variable not set.")
@@ -449,6 +483,10 @@ async def get_snapshot_option(
 async def list_snapshot_options_chain(
     underlying_asset: str,
     params: Optional[Dict[str, Any]] = None,
+    # Output filtering parameters
+    fields: Optional[str] = None,
+    output_format: Optional[str] = "csv",
+    aggregate: Optional[str] = None,
 ) -> str:
     """
     Get snapshots for all options contracts for an underlying ticker. This provides a comprehensive view of the options chain including pricing, Greeks, implied volatility, and more.
@@ -460,6 +498,23 @@ async def list_snapshot_options_chain(
     - limit: Number of results (default 10, max 250)
     - order: Order results based on sort field
     - sort: Sort field for ordering
+
+    Output Filtering (NEW):
+        fields: Comma-separated field names (e.g., "ticker,strike_price,expiration_date") or preset name
+                (e.g., "preset:price", "preset:ohlc"). Available presets:
+                - preset:price (ticker, close, timestamp)
+                - preset:ohlc (ticker, open, high, low, close, timestamp)
+                - preset:ohlcv (includes volume)
+                - preset:summary (ticker, close, volume, change_percent)
+        output_format: Response format - "csv" (default), "json", or "compact"
+        aggregate: Return single record - "first", "last", or None for all records
+
+    Examples:
+        # Get only expiration dates
+        fields="expiration_date", output_format="csv"
+
+        # Get strike and expiration in compact format
+        fields="strike_price,expiration_date", output_format="compact"
     """
     try:
         results = polygon_client.list_snapshot_options_chain(
@@ -468,7 +523,12 @@ async def list_snapshot_options_chain(
             raw=True,
         )
 
-        return json_to_csv(results.data.decode("utf-8"))
+        return _apply_output_filtering(
+            results.data,
+            fields=fields,
+            output_format=output_format,
+            aggregate=aggregate,
+        )
     except Exception as e:
         return f"Error: {e}"
 
