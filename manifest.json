@@ -1,7 +1,7 @@
 {
   "manifest_version": "0.2",
   "name": "mcp_massive",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "description": "MCP server providing access to Massive.com financial market data API",
   "author": {
     "name": "Massive.com",
@@ -18,7 +18,7 @@
       "command": "uvx",
       "args": [
         "--from",
-        "git+https://github.com/mobatmedia/mcp_massive",
+        "git+https://github.com/massive-com/mcp_massive",
         "mcp_massive"
       ]
     }
@@ -34,6 +34,6 @@
   "compatibility": {
     "python": ">=3.10"
   },
-  "repository": "https://github.com/polygon-io/mcp_massive",
+  "repository": "https://github.com/massive-com/mcp_massive",
   "license": "MIT"
 }
