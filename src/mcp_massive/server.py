@@ -589,7 +589,7 @@ async def get_ticker_types(
     params: Optional[Dict[str, Any]] = None,
 ) -> str:
     """
-    List all ticker types supported by Polygon.io.
+    List all ticker types supported by Massive.com.
     """
     try:
         results = massive_client.get_ticker_types(
@@ -664,7 +664,7 @@ async def list_conditions(
     params: Optional[Dict[str, Any]] = None,
 ) -> str:
     """
-    List conditions used by Polygon.io.
+    List conditions used by Massive.com.
     """
     try:
         results = massive_client.list_conditions(
@@ -688,7 +688,7 @@ async def get_exchanges(
     params: Optional[Dict[str, Any]] = None,
 ) -> str:
     """
-    List exchanges known by Polygon.io.
+    List exchanges known by Massive.com.
     """
     try:
         results = massive_client.get_exchanges(
