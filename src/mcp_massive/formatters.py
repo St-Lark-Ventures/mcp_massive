@@ -114,11 +114,25 @@ def json_to_csv_filtered(
     # Flatten records
     flattened = [_flatten_dict(record) for record in records]
 
-    # Apply field filtering
+    # Apply field filtering with flexible matching
     if fields:
-        flattened = [
-            {k: v for k, v in record.items() if k in fields} for record in flattened
-        ]
+        filtered = []
+        for record in flattened:
+            filtered_record = {}
+            for field in fields:
+                # Try exact match first
+                if field in record:
+                    filtered_record[field] = record[field]
+                else:
+                    # Try suffix match (e.g., "expiration_date" matches "details_expiration_date")
+                    for key, value in record.items():
+                        if key.endswith(f"_{field}") or key.endswith(f".{field}"):
+                            # Use the original field name for output
+                            filtered_record[field] = value
+                            break
+            if filtered_record:  # Only include records with at least one matching field
+                filtered.append(filtered_record)
+        flattened = filtered
     elif exclude_fields:
         flattened = [
             {k: v for k, v in record.items() if k not in exclude_fields}
@@ -174,9 +188,20 @@ def json_to_compact(json_input: str | dict, fields: Optional[List[str]] = None) 
     # Flatten
     flattened = _flatten_dict(record)
 
-    # Apply field filtering
+    # Apply field filtering with flexible matching
     if fields:
-        flattened = {k: v for k, v in flattened.items() if k in fields}
+        filtered = {}
+        for field in fields:
+            # Try exact match first
+            if field in flattened:
+                filtered[field] = flattened[field]
+            else:
+                # Try suffix match
+                for key, value in flattened.items():
+                    if key.endswith(f"_{field}") or key.endswith(f".{field}"):
+                        filtered[field] = value
+                        break
+        flattened = filtered
 
     return json.dumps(flattened, separators=(",", ":"))
 
@@ -212,9 +237,23 @@ def json_to_json_filtered(
     if not preserve_structure:
         records = [_flatten_dict(record) for record in records]
 
+    # Apply field filtering with flexible matching
     if fields:
-        records = [
-            {k: v for k, v in record.items() if k in fields} for record in records
-        ]
+        filtered_records = []
+        for record in records:
+            filtered_record = {}
+            for field in fields:
+                # Try exact match first
+                if field in record:
+                    filtered_record[field] = record[field]
+                else:
+                    # Try suffix match
+                    for key, value in record.items():
+                        if key.endswith(f"_{field}") or key.endswith(f".{field}"):
+                            filtered_record[field] = value
+                            break
+            if filtered_record:
+                filtered_records.append(filtered_record)
+        records = filtered_records
 
     return json.dumps(records, indent=2)
