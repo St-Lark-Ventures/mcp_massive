@@ -54,7 +54,7 @@ class FilterOptions:
 
 
 def parse_filter_params(
-    fields: Optional[str] = None,
+    fields: Optional[List[str]] = None,
     output_format: str = "csv",
     aggregate: Optional[str] = None,
 ) -> FilterOptions:
@@ -62,7 +62,7 @@ def parse_filter_params(
     Parse tool parameters into FilterOptions.
 
     Args:
-        fields: Comma-separated field names or preset name (e.g., "ticker,close" or "preset:price")
+        fields: List of field names or single-item list with preset (e.g., ["ticker", "close"] or ["preset:price"])
         output_format: Desired output format ("csv", "json", or "compact")
         aggregate: Aggregation method ("first", "last", or None)
 
@@ -72,17 +72,17 @@ def parse_filter_params(
     # Parse fields parameter
     field_list = None
     if fields:
-        # Check if it's a preset
-        if fields.startswith("preset:"):
-            preset_name = fields[7:]  # Remove "preset:" prefix
+        # Check if it's a preset (single item starting with "preset:")
+        if len(fields) == 1 and fields[0].startswith("preset:"):
+            preset_name = fields[0][7:]  # Remove "preset:" prefix
             field_list = FIELD_PRESETS.get(preset_name)
             if field_list is None:
                 raise ValueError(
                     f"Unknown preset: {preset_name}. Available presets: {', '.join(FIELD_PRESETS.keys())}"
                 )
         else:
-            # Parse comma-separated fields
-            field_list = [f.strip() for f in fields.split(",") if f.strip()]
+            # Use the provided field list directly
+            field_list = fields
 
     # Validate output format
     if output_format not in ["csv", "json", "compact"]:

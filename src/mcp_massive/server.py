@@ -11,7 +11,7 @@ from datetime import datetime, date
 
 def _apply_output_filtering(
     raw_data: bytes,
-    fields: Optional[str] = None,
+    fields: Optional[List[str]] = None,
     output_format: str = "csv",
     aggregate: Optional[str] = None,
 ) -> str:
@@ -20,7 +20,7 @@ def _apply_output_filtering(
 
     Args:
         raw_data: Raw bytes from API response
-        fields: Field selection (comma-separated or preset)
+        fields: List of field names or preset (e.g., ["ticker", "close"] or ["preset:price"])
         output_format: Output format (csv, json, compact)
         aggregate: Aggregation method (first, last)
 
@@ -70,7 +70,7 @@ async def get_aggs(
     limit: Optional[int] = 10,
     params: Optional[Dict[str, Any]] = None,
     # Output filtering parameters
-    fields: Optional[str] = None,
+    fields: Optional[List[str]] = None,
     output_format: Optional[str] = "csv",
     aggregate: Optional[str] = None,
 ) -> str:
@@ -78,7 +78,7 @@ async def get_aggs(
     List aggregate bars for a ticker over a given date range in custom time window sizes.
 
     Output Filtering:
-        fields: Comma-separated field names or preset name (e.g., "preset:price", "preset:ohlc")
+        fields: List of field names (e.g., ["ticker", "close"]) or preset (e.g., ["preset:price"])
         output_format: Response format - "csv" (default), "json", or "compact"
         aggregate: Return single record - "first", "last", or None for all records
     """
@@ -113,7 +113,7 @@ async def list_aggs(
     limit: Optional[int] = 10,
     params: Optional[Dict[str, Any]] = None,
     # Output filtering parameters
-    fields: Optional[str] = None,
+    fields: Optional[List[str]] = None,
     output_format: Optional[str] = "csv",
     aggregate: Optional[str] = None,
 ) -> str:
@@ -121,7 +121,7 @@ async def list_aggs(
     Iterate through aggregate bars for a ticker over a given date range.
 
     Output Filtering:
-        fields: Comma-separated field names or preset name (e.g., "preset:price", "preset:ohlc")
+        fields: List of field names (e.g., ["ticker", "close"]) or preset (e.g., ["preset:price"])
         output_format: Response format - "csv" (default), "json", or "compact"
         aggregate: Return single record - "first", "last", or None for all records
     """
@@ -153,7 +153,7 @@ async def get_grouped_daily_aggs(
     market_type: Optional[str] = None,
     params: Optional[Dict[str, Any]] = None,
     # Output filtering parameters
-    fields: Optional[str] = None,
+    fields: Optional[List[str]] = None,
     output_format: Optional[str] = "csv",
     aggregate: Optional[str] = None,
 ) -> str:
@@ -161,7 +161,7 @@ async def get_grouped_daily_aggs(
     Get grouped daily bars for entire market for a specific date.
 
     Output Filtering:
-        fields: Comma-separated field names or preset name (e.g., "preset:price", "preset:ohlc")
+        fields: List of field names (e.g., ["ticker", "close"]) or preset (e.g., ["preset:price"])
         output_format: Response format - "csv" (default), "json", or "compact"
         aggregate: Return single record - "first", "last", or None for all records
     """
@@ -188,7 +188,7 @@ async def get_daily_open_close_agg(
     adjusted: Optional[bool] = None,
     params: Optional[Dict[str, Any]] = None,
     # Output filtering parameters
-    fields: Optional[str] = None,
+    fields: Optional[List[str]] = None,
     output_format: Optional[str] = "csv",
     aggregate: Optional[str] = None,
 ) -> str:
@@ -196,7 +196,7 @@ async def get_daily_open_close_agg(
     Get daily open, close, high, and low for a specific ticker and date.
 
     Output Filtering:
-        fields: Comma-separated field names or preset name (e.g., "preset:price", "preset:ohlc")
+        fields: List of field names (e.g., ["ticker", "close"]) or preset (e.g., ["preset:price"])
         output_format: Response format - "csv" (default), "json", or "compact"
         aggregate: Return single record - "first", "last", or None for all records
     """
@@ -216,7 +216,7 @@ async def get_previous_close_agg(
     adjusted: Optional[bool] = None,
     params: Optional[Dict[str, Any]] = None,
     # Output filtering parameters
-    fields: Optional[str] = None,
+    fields: Optional[List[str]] = None,
     output_format: Optional[str] = "csv",
     aggregate: Optional[str] = None,
 ) -> str:
@@ -224,7 +224,7 @@ async def get_previous_close_agg(
     Get previous day's open, close, high, and low for a specific ticker.
 
     Output Filtering:
-        fields: Comma-separated field names or preset name (e.g., "preset:price", "preset:ohlc")
+        fields: List of field names (e.g., ["ticker", "close"]) or preset (e.g., ["preset:price"])
         output_format: Response format - "csv" (default), "json", or "compact"
         aggregate: Return single record - "first", "last", or None for all records
     """
@@ -251,7 +251,7 @@ async def list_trades(
     order: Optional[str] = None,
     params: Optional[Dict[str, Any]] = None,
     # Output filtering parameters
-    fields: Optional[str] = None,
+    fields: Optional[List[str]] = None,
     output_format: Optional[str] = "csv",
     aggregate: Optional[str] = None,
 ) -> str:
@@ -259,7 +259,7 @@ async def list_trades(
     Get trades for a ticker symbol.
 
     Output Filtering:
-        fields: Comma-separated field names or preset name (e.g., "preset:price", "preset:ohlc")
+        fields: List of field names (e.g., ["ticker", "close"]) or preset (e.g., ["preset:price"])
         output_format: Response format - "csv" (default), "json", or "compact"
         aggregate: Return single record - "first", "last", or None for all records
     """
@@ -288,7 +288,7 @@ async def get_last_trade(
     ticker: str,
     params: Optional[Dict[str, Any]] = None,
     # Output filtering parameters
-    fields: Optional[str] = None,
+    fields: Optional[List[str]] = None,
     output_format: Optional[str] = "csv",
     aggregate: Optional[str] = None,
 ) -> str:
@@ -296,7 +296,7 @@ async def get_last_trade(
     Get the most recent trade for a ticker symbol.
 
     Output Filtering:
-        fields: Comma-separated field names or preset name (e.g., "preset:price", "preset:ohlc")
+        fields: List of field names (e.g., ["ticker", "close"]) or preset (e.g., ["preset:price"])
         output_format: Response format - "csv" (default), "json", or "compact"
         aggregate: Return single record - "first", "last", or None for all records
     """
@@ -314,7 +314,7 @@ async def get_last_crypto_trade(
     to: str,
     params: Optional[Dict[str, Any]] = None,
     # Output filtering parameters
-    fields: Optional[str] = None,
+    fields: Optional[List[str]] = None,
     output_format: Optional[str] = "csv",
     aggregate: Optional[str] = None,
 ) -> str:
@@ -322,7 +322,7 @@ async def get_last_crypto_trade(
     Get the most recent trade for a crypto pair.
 
     Output Filtering:
-        fields: Comma-separated field names or preset name (e.g., "preset:price", "preset:ohlc")
+        fields: List of field names (e.g., ["ticker", "close"]) or preset (e.g., ["preset:price"])
         output_format: Response format - "csv" (default), "json", or "compact"
         aggregate: Return single record - "first", "last", or None for all records
     """
@@ -349,7 +349,7 @@ async def list_quotes(
     order: Optional[str] = None,
     params: Optional[Dict[str, Any]] = None,
     # Output filtering parameters
-    fields: Optional[str] = None,
+    fields: Optional[List[str]] = None,
     output_format: Optional[str] = "csv",
     aggregate: Optional[str] = None,
 ) -> str:
@@ -357,7 +357,7 @@ async def list_quotes(
     Get quotes for a ticker symbol.
 
     Output Filtering:
-        fields: Comma-separated field names or preset name (e.g., "preset:price", "preset:ohlc")
+        fields: List of field names (e.g., ["ticker", "close"]) or preset (e.g., ["preset:price"])
         output_format: Response format - "csv" (default), "json", or "compact"
         aggregate: Return single record - "first", "last", or None for all records
     """
@@ -386,7 +386,7 @@ async def get_last_quote(
     ticker: str,
     params: Optional[Dict[str, Any]] = None,
     # Output filtering parameters
-    fields: Optional[str] = None,
+    fields: Optional[List[str]] = None,
     output_format: Optional[str] = "csv",
     aggregate: Optional[str] = None,
 ) -> str:
@@ -394,7 +394,7 @@ async def get_last_quote(
     Get the most recent quote for a ticker symbol.
 
     Output Filtering:
-        fields: Comma-separated field names or preset name (e.g., "preset:price", "preset:ohlc")
+        fields: List of field names (e.g., ["ticker", "close"]) or preset (e.g., ["preset:price"])
         output_format: Response format - "csv" (default), "json", or "compact"
         aggregate: Return single record - "first", "last", or None for all records
     """
@@ -412,7 +412,7 @@ async def get_last_forex_quote(
     to: str,
     params: Optional[Dict[str, Any]] = None,
     # Output filtering parameters
-    fields: Optional[str] = None,
+    fields: Optional[List[str]] = None,
     output_format: Optional[str] = "csv",
     aggregate: Optional[str] = None,
 ) -> str:
@@ -421,7 +421,7 @@ async def get_last_forex_quote(
     
 
     Output Filtering:
-        fields: Comma-separated field names or preset name (e.g., "preset:price", "preset:ohlc")
+        fields: List of field names (e.g., ["ticker", "close"]) or preset (e.g., ["preset:price"])
         output_format: Response format - "csv" (default), "json", or "compact"
         aggregate: Return single record - "first", "last", or None for all records
     """
@@ -443,7 +443,7 @@ async def get_real_time_currency_conversion(
     precision: Optional[int] = None,
     params: Optional[Dict[str, Any]] = None,
     # Output filtering parameters
-    fields: Optional[str] = None,
+    fields: Optional[List[str]] = None,
     output_format: Optional[str] = "csv",
     aggregate: Optional[str] = None,
 ) -> str:
@@ -452,7 +452,7 @@ async def get_real_time_currency_conversion(
     
 
     Output Filtering:
-        fields: Comma-separated field names or preset name (e.g., "preset:price", "preset:ohlc")
+        fields: List of field names (e.g., ["ticker", "close"]) or preset (e.g., ["preset:price"])
         output_format: Response format - "csv" (default), "json", or "compact"
         aggregate: Return single record - "first", "last", or None for all records
     """
@@ -480,7 +480,7 @@ async def list_universal_snapshots(
     sort: Optional[str] = None,
     params: Optional[Dict[str, Any]] = None,
     # Output filtering parameters
-    fields: Optional[str] = None,
+    fields: Optional[List[str]] = None,
     output_format: Optional[str] = "csv",
     aggregate: Optional[str] = None,
 ) -> str:
@@ -489,7 +489,7 @@ async def list_universal_snapshots(
     
 
     Output Filtering:
-        fields: Comma-separated field names or preset name (e.g., "preset:price", "preset:ohlc")
+        fields: List of field names (e.g., ["ticker", "close"]) or preset (e.g., ["preset:price"])
         output_format: Response format - "csv" (default), "json", or "compact"
         aggregate: Return single record - "first", "last", or None for all records
     """
@@ -516,7 +516,7 @@ async def get_snapshot_all(
     include_otc: Optional[bool] = None,
     params: Optional[Dict[str, Any]] = None,
     # Output filtering parameters
-    fields: Optional[str] = None,
+    fields: Optional[List[str]] = None,
     output_format: Optional[str] = "csv",
     aggregate: Optional[str] = None,
 ) -> str:
@@ -525,7 +525,7 @@ async def get_snapshot_all(
     
 
     Output Filtering:
-        fields: Comma-separated field names or preset name (e.g., "preset:price", "preset:ohlc")
+        fields: List of field names (e.g., ["ticker", "close"]) or preset (e.g., ["preset:price"])
         output_format: Response format - "csv" (default), "json", or "compact"
         aggregate: Return single record - "first", "last", or None for all records
     """
@@ -550,7 +550,7 @@ async def get_snapshot_direction(
     include_otc: Optional[bool] = None,
     params: Optional[Dict[str, Any]] = None,
     # Output filtering parameters
-    fields: Optional[str] = None,
+    fields: Optional[List[str]] = None,
     output_format: Optional[str] = "csv",
     aggregate: Optional[str] = None,
 ) -> str:
@@ -559,7 +559,7 @@ async def get_snapshot_direction(
     
 
     Output Filtering:
-        fields: Comma-separated field names or preset name (e.g., "preset:price", "preset:ohlc")
+        fields: List of field names (e.g., ["ticker", "close"]) or preset (e.g., ["preset:price"])
         output_format: Response format - "csv" (default), "json", or "compact"
         aggregate: Return single record - "first", "last", or None for all records
     """
@@ -583,7 +583,7 @@ async def get_snapshot_ticker(
     ticker: str,
     params: Optional[Dict[str, Any]] = None,
     # Output filtering parameters
-    fields: Optional[str] = None,
+    fields: Optional[List[str]] = None,
     output_format: Optional[str] = "csv",
     aggregate: Optional[str] = None,
 ) -> str:
@@ -592,7 +592,7 @@ async def get_snapshot_ticker(
     
 
     Output Filtering:
-        fields: Comma-separated field names or preset name (e.g., "preset:price", "preset:ohlc")
+        fields: List of field names (e.g., ["ticker", "close"]) or preset (e.g., ["preset:price"])
         output_format: Response format - "csv" (default), "json", or "compact"
         aggregate: Return single record - "first", "last", or None for all records
     """
@@ -612,7 +612,7 @@ async def get_snapshot_option(
     option_contract: str,
     params: Optional[Dict[str, Any]] = None,
     # Output filtering parameters
-    fields: Optional[str] = None,
+    fields: Optional[List[str]] = None,
     output_format: Optional[str] = "csv",
     aggregate: Optional[str] = None,
 ) -> str:
@@ -621,7 +621,7 @@ async def get_snapshot_option(
     
 
     Output Filtering:
-        fields: Comma-separated field names or preset name (e.g., "preset:price", "preset:ohlc")
+        fields: List of field names (e.g., ["ticker", "close"]) or preset (e.g., ["preset:price"])
         output_format: Response format - "csv" (default), "json", or "compact"
         aggregate: Return single record - "first", "last", or None for all records
     """
@@ -643,7 +643,7 @@ async def list_snapshot_options_chain(
     underlying_asset: str,
     params: Optional[Dict[str, Any]] = None,
     # Output filtering parameters
-    fields: Optional[str] = None,
+    fields: Optional[List[str]] = None,
     output_format: Optional[str] = "csv",
     aggregate: Optional[str] = None,
 ) -> str:
@@ -659,8 +659,8 @@ async def list_snapshot_options_chain(
     - sort: Sort field for ordering
 
     Output Filtering (NEW):
-        fields: Comma-separated field names (e.g., "ticker,strike_price,expiration_date") or preset name
-                (e.g., "preset:price", "preset:ohlc"). Available presets:
+        fields: List of field names (e.g., ["ticker", "strike_price", "expiration_date"]) or preset
+                (e.g., ["preset:price"], ["preset:ohlc"]). Available presets:
                 - preset:price (ticker, close, timestamp)
                 - preset:ohlc (ticker, open, high, low, close, timestamp)
                 - preset:ohlcv (includes volume)
@@ -670,10 +670,13 @@ async def list_snapshot_options_chain(
 
     Examples:
         # Get only expiration dates
-        fields="expiration_date", output_format="csv"
+        fields=["expiration_date"], output_format="csv"
 
         # Get strike and expiration in compact format
-        fields="strike_price,expiration_date", output_format="compact"
+        fields=["strike_price", "expiration_date"], output_format="compact"
+
+        # Use a preset
+        fields=["preset:ohlc"], output_format="json"
     """
     try:
         results = polygon_client.list_snapshot_options_chain(
@@ -697,7 +700,7 @@ async def get_snapshot_crypto_book(
     ticker: str,
     params: Optional[Dict[str, Any]] = None,
     # Output filtering parameters
-    fields: Optional[str] = None,
+    fields: Optional[List[str]] = None,
     output_format: Optional[str] = "csv",
     aggregate: Optional[str] = None,
 ) -> str:
@@ -706,7 +709,7 @@ async def get_snapshot_crypto_book(
     
 
     Output Filtering:
-        fields: Comma-separated field names or preset name (e.g., "preset:price", "preset:ohlc")
+        fields: List of field names (e.g., ["ticker", "close"]) or preset (e.g., ["preset:price"])
         output_format: Response format - "csv" (default), "json", or "compact"
         aggregate: Return single record - "first", "last", or None for all records
     """
@@ -724,7 +727,7 @@ async def get_snapshot_crypto_book(
 async def get_market_holidays(
     params: Optional[Dict[str, Any]] = None,
     # Output filtering parameters
-    fields: Optional[str] = None,
+    fields: Optional[List[str]] = None,
     output_format: Optional[str] = "csv",
     aggregate: Optional[str] = None,
 ) -> str:
@@ -733,7 +736,7 @@ async def get_market_holidays(
     
 
     Output Filtering:
-        fields: Comma-separated field names or preset name (e.g., "preset:price", "preset:ohlc")
+        fields: List of field names (e.g., ["ticker", "close"]) or preset (e.g., ["preset:price"])
         output_format: Response format - "csv" (default), "json", or "compact"
         aggregate: Return single record - "first", "last", or None for all records
     """
@@ -749,7 +752,7 @@ async def get_market_holidays(
 async def get_market_status(
     params: Optional[Dict[str, Any]] = None,
     # Output filtering parameters
-    fields: Optional[str] = None,
+    fields: Optional[List[str]] = None,
     output_format: Optional[str] = "csv",
     aggregate: Optional[str] = None,
 ) -> str:
@@ -758,7 +761,7 @@ async def get_market_status(
     
 
     Output Filtering:
-        fields: Comma-separated field names or preset name (e.g., "preset:price", "preset:ohlc")
+        fields: List of field names (e.g., ["ticker", "close"]) or preset (e.g., ["preset:price"])
         output_format: Response format - "csv" (default), "json", or "compact"
         aggregate: Return single record - "first", "last", or None for all records
     """
@@ -786,7 +789,7 @@ async def list_tickers(
     limit: Optional[int] = 10,
     params: Optional[Dict[str, Any]] = None,
     # Output filtering parameters
-    fields: Optional[str] = None,
+    fields: Optional[List[str]] = None,
     output_format: Optional[str] = "csv",
     aggregate: Optional[str] = None,
 ) -> str:
@@ -795,7 +798,7 @@ async def list_tickers(
     
 
     Output Filtering:
-        fields: Comma-separated field names or preset name (e.g., "preset:price", "preset:ohlc")
+        fields: List of field names (e.g., ["ticker", "close"]) or preset (e.g., ["preset:price"])
         output_format: Response format - "csv" (default), "json", or "compact"
         aggregate: Return single record - "first", "last", or None for all records
     """
@@ -828,7 +831,7 @@ async def get_ticker_details(
     date: Optional[Union[str, datetime, date]] = None,
     params: Optional[Dict[str, Any]] = None,
     # Output filtering parameters
-    fields: Optional[str] = None,
+    fields: Optional[List[str]] = None,
     output_format: Optional[str] = "csv",
     aggregate: Optional[str] = None,
 ) -> str:
@@ -837,7 +840,7 @@ async def get_ticker_details(
     
 
     Output Filtering:
-        fields: Comma-separated field names or preset name (e.g., "preset:price", "preset:ohlc")
+        fields: List of field names (e.g., ["ticker", "close"]) or preset (e.g., ["preset:price"])
         output_format: Response format - "csv" (default), "json", or "compact"
         aggregate: Return single record - "first", "last", or None for all records
     """
@@ -860,7 +863,7 @@ async def list_ticker_news(
     order: Optional[str] = None,
     params: Optional[Dict[str, Any]] = None,
     # Output filtering parameters
-    fields: Optional[str] = None,
+    fields: Optional[List[str]] = None,
     output_format: Optional[str] = "csv",
     aggregate: Optional[str] = None,
 ) -> str:
@@ -869,7 +872,7 @@ async def list_ticker_news(
     
 
     Output Filtering:
-        fields: Comma-separated field names or preset name (e.g., "preset:price", "preset:ohlc")
+        fields: List of field names (e.g., ["ticker", "close"]) or preset (e.g., ["preset:price"])
         output_format: Response format - "csv" (default), "json", or "compact"
         aggregate: Return single record - "first", "last", or None for all records
     """
@@ -895,7 +898,7 @@ async def get_ticker_types(
     locale: Optional[str] = None,
     params: Optional[Dict[str, Any]] = None,
     # Output filtering parameters
-    fields: Optional[str] = None,
+    fields: Optional[List[str]] = None,
     output_format: Optional[str] = "csv",
     aggregate: Optional[str] = None,
 ) -> str:
@@ -904,7 +907,7 @@ async def get_ticker_types(
     
 
     Output Filtering:
-        fields: Comma-separated field names or preset name (e.g., "preset:price", "preset:ohlc")
+        fields: List of field names (e.g., ["ticker", "close"]) or preset (e.g., ["preset:price"])
         output_format: Response format - "csv" (default), "json", or "compact"
         aggregate: Return single record - "first", "last", or None for all records
     """
@@ -926,7 +929,7 @@ async def list_splits(
     limit: Optional[int] = 10,
     params: Optional[Dict[str, Any]] = None,
     # Output filtering parameters
-    fields: Optional[str] = None,
+    fields: Optional[List[str]] = None,
     output_format: Optional[str] = "csv",
     aggregate: Optional[str] = None,
 ) -> str:
@@ -935,7 +938,7 @@ async def list_splits(
     
 
     Output Filtering:
-        fields: Comma-separated field names or preset name (e.g., "preset:price", "preset:ohlc")
+        fields: List of field names (e.g., ["ticker", "close"]) or preset (e.g., ["preset:price"])
         output_format: Response format - "csv" (default), "json", or "compact"
         aggregate: Return single record - "first", "last", or None for all records
     """
@@ -963,7 +966,7 @@ async def list_dividends(
     limit: Optional[int] = 10,
     params: Optional[Dict[str, Any]] = None,
     # Output filtering parameters
-    fields: Optional[str] = None,
+    fields: Optional[List[str]] = None,
     output_format: Optional[str] = "csv",
     aggregate: Optional[str] = None,
 ) -> str:
@@ -972,7 +975,7 @@ async def list_dividends(
     
 
     Output Filtering:
-        fields: Comma-separated field names or preset name (e.g., "preset:price", "preset:ohlc")
+        fields: List of field names (e.g., ["ticker", "close"]) or preset (e.g., ["preset:price"])
         output_format: Response format - "csv" (default), "json", or "compact"
         aggregate: Return single record - "first", "last", or None for all records
     """
@@ -1000,7 +1003,7 @@ async def list_conditions(
     sip: Optional[str] = None,
     params: Optional[Dict[str, Any]] = None,
     # Output filtering parameters
-    fields: Optional[str] = None,
+    fields: Optional[List[str]] = None,
     output_format: Optional[str] = "csv",
     aggregate: Optional[str] = None,
 ) -> str:
@@ -1009,7 +1012,7 @@ async def list_conditions(
     
 
     Output Filtering:
-        fields: Comma-separated field names or preset name (e.g., "preset:price", "preset:ohlc")
+        fields: List of field names (e.g., ["ticker", "close"]) or preset (e.g., ["preset:price"])
         output_format: Response format - "csv" (default), "json", or "compact"
         aggregate: Return single record - "first", "last", or None for all records
     """
@@ -1034,7 +1037,7 @@ async def get_exchanges(
     locale: Optional[str] = None,
     params: Optional[Dict[str, Any]] = None,
     # Output filtering parameters
-    fields: Optional[str] = None,
+    fields: Optional[List[str]] = None,
     output_format: Optional[str] = "csv",
     aggregate: Optional[str] = None,
 ) -> str:
@@ -1043,7 +1046,7 @@ async def get_exchanges(
     
 
     Output Filtering:
-        fields: Comma-separated field names or preset name (e.g., "preset:price", "preset:ohlc")
+        fields: List of field names (e.g., ["ticker", "close"]) or preset (e.g., ["preset:price"])
         output_format: Response format - "csv" (default), "json", or "compact"
         aggregate: Return single record - "first", "last", or None for all records
     """
@@ -1081,7 +1084,7 @@ async def list_stock_financials(
     order: Optional[str] = None,
     params: Optional[Dict[str, Any]] = None,
     # Output filtering parameters
-    fields: Optional[str] = None,
+    fields: Optional[List[str]] = None,
     output_format: Optional[str] = "csv",
     aggregate: Optional[str] = None,
 ) -> str:
@@ -1090,7 +1093,7 @@ async def list_stock_financials(
     
 
     Output Filtering:
-        fields: Comma-separated field names or preset name (e.g., "preset:price", "preset:ohlc")
+        fields: List of field names (e.g., ["ticker", "close"]) or preset (e.g., ["preset:price"])
         output_format: Response format - "csv" (default), "json", or "compact"
         aggregate: Return single record - "first", "last", or None for all records
     """
@@ -1139,7 +1142,7 @@ async def list_ipos(
     order: Optional[str] = None,
     params: Optional[Dict[str, Any]] = None,
     # Output filtering parameters
-    fields: Optional[str] = None,
+    fields: Optional[List[str]] = None,
     output_format: Optional[str] = "csv",
     aggregate: Optional[str] = None,
 ) -> str:
@@ -1148,7 +1151,7 @@ async def list_ipos(
     
 
     Output Filtering:
-        fields: Comma-separated field names or preset name (e.g., "preset:price", "preset:ohlc")
+        fields: List of field names (e.g., ["ticker", "close"]) or preset (e.g., ["preset:price"])
         output_format: Response format - "csv" (default), "json", or "compact"
         aggregate: Return single record - "first", "last", or None for all records
     """
@@ -1186,7 +1189,7 @@ async def list_short_interest(
     order: Optional[str] = None,
     params: Optional[Dict[str, Any]] = None,
     # Output filtering parameters
-    fields: Optional[str] = None,
+    fields: Optional[List[str]] = None,
     output_format: Optional[str] = "csv",
     aggregate: Optional[str] = None,
 ) -> str:
@@ -1195,7 +1198,7 @@ async def list_short_interest(
     
 
     Output Filtering:
-        fields: Comma-separated field names or preset name (e.g., "preset:price", "preset:ohlc")
+        fields: List of field names (e.g., ["ticker", "close"]) or preset (e.g., ["preset:price"])
         output_format: Response format - "csv" (default), "json", or "compact"
         aggregate: Return single record - "first", "last", or None for all records
     """
@@ -1232,7 +1235,7 @@ async def list_short_volume(
     order: Optional[str] = None,
     params: Optional[Dict[str, Any]] = None,
     # Output filtering parameters
-    fields: Optional[str] = None,
+    fields: Optional[List[str]] = None,
     output_format: Optional[str] = "csv",
     aggregate: Optional[str] = None,
 ) -> str:
@@ -1241,7 +1244,7 @@ async def list_short_volume(
     
 
     Output Filtering:
-        fields: Comma-separated field names or preset name (e.g., "preset:price", "preset:ohlc")
+        fields: List of field names (e.g., ["ticker", "close"]) or preset (e.g., ["preset:price"])
         output_format: Response format - "csv" (default), "json", or "compact"
         aggregate: Return single record - "first", "last", or None for all records
     """
@@ -1278,7 +1281,7 @@ async def list_treasury_yields(
     order: Optional[str] = None,
     params: Optional[Dict[str, Any]] = None,
     # Output filtering parameters
-    fields: Optional[str] = None,
+    fields: Optional[List[str]] = None,
     output_format: Optional[str] = "csv",
     aggregate: Optional[str] = None,
 ) -> str:
@@ -1287,7 +1290,7 @@ async def list_treasury_yields(
     
 
     Output Filtering:
-        fields: Comma-separated field names or preset name (e.g., "preset:price", "preset:ohlc")
+        fields: List of field names (e.g., ["ticker", "close"]) or preset (e.g., ["preset:price"])
         output_format: Response format - "csv" (default), "json", or "compact"
         aggregate: Return single record - "first", "last", or None for all records
     """
@@ -1322,7 +1325,7 @@ async def list_inflation(
     sort: Optional[str] = None,
     params: Optional[Dict[str, Any]] = None,
     # Output filtering parameters
-    fields: Optional[str] = None,
+    fields: Optional[List[str]] = None,
     output_format: Optional[str] = "csv",
     aggregate: Optional[str] = None,
 ) -> str:
@@ -1331,7 +1334,7 @@ async def list_inflation(
     
 
     Output Filtering:
-        fields: Comma-separated field names or preset name (e.g., "preset:price", "preset:ohlc")
+        fields: List of field names (e.g., ["ticker", "close"]) or preset (e.g., ["preset:price"])
         output_format: Response format - "csv" (default), "json", or "compact"
         aggregate: Return single record - "first", "last", or None for all records
     """
@@ -1402,7 +1405,7 @@ async def list_benzinga_analyst_insights(
     sort: Optional[str] = None,
     params: Optional[Dict[str, Any]] = None,
     # Output filtering parameters
-    fields: Optional[str] = None,
+    fields: Optional[List[str]] = None,
     output_format: Optional[str] = "csv",
     aggregate: Optional[str] = None,
 ) -> str:
@@ -1411,7 +1414,7 @@ async def list_benzinga_analyst_insights(
     
 
     Output Filtering:
-        fields: Comma-separated field names or preset name (e.g., "preset:price", "preset:ohlc")
+        fields: List of field names (e.g., ["ticker", "close"]) or preset (e.g., ["preset:price"])
         output_format: Response format - "csv" (default), "json", or "compact"
         aggregate: Return single record - "first", "last", or None for all records
     """
@@ -1500,7 +1503,7 @@ async def list_benzinga_analysts(
     sort: Optional[str] = None,
     params: Optional[Dict[str, Any]] = None,
     # Output filtering parameters
-    fields: Optional[str] = None,
+    fields: Optional[List[str]] = None,
     output_format: Optional[str] = "csv",
     aggregate: Optional[str] = None,
 ) -> str:
@@ -1509,7 +1512,7 @@ async def list_benzinga_analysts(
     
 
     Output Filtering:
-        fields: Comma-separated field names or preset name (e.g., "preset:price", "preset:ohlc")
+        fields: List of field names (e.g., ["ticker", "close"]) or preset (e.g., ["preset:price"])
         output_format: Response format - "csv" (default), "json", or "compact"
         aggregate: Return single record - "first", "last", or None for all records
     """
@@ -1561,7 +1564,7 @@ async def list_benzinga_consensus_ratings(
     limit: Optional[int] = 10,
     params: Optional[Dict[str, Any]] = None,
     # Output filtering parameters
-    fields: Optional[str] = None,
+    fields: Optional[List[str]] = None,
     output_format: Optional[str] = "csv",
     aggregate: Optional[str] = None,
 ) -> str:
@@ -1570,7 +1573,7 @@ async def list_benzinga_consensus_ratings(
     
 
     Output Filtering:
-        fields: Comma-separated field names or preset name (e.g., "preset:price", "preset:ohlc")
+        fields: List of field names (e.g., ["ticker", "close"]) or preset (e.g., ["preset:price"])
         output_format: Response format - "csv" (default), "json", or "compact"
         aggregate: Return single record - "first", "last", or None for all records
     """
@@ -1652,7 +1655,7 @@ async def list_benzinga_earnings(
     sort: Optional[str] = None,
     params: Optional[Dict[str, Any]] = None,
     # Output filtering parameters
-    fields: Optional[str] = None,
+    fields: Optional[List[str]] = None,
     output_format: Optional[str] = "csv",
     aggregate: Optional[str] = None,
 ) -> str:
@@ -1661,7 +1664,7 @@ async def list_benzinga_earnings(
     
 
     Output Filtering:
-        fields: Comma-separated field names or preset name (e.g., "preset:price", "preset:ohlc")
+        fields: List of field names (e.g., ["ticker", "close"]) or preset (e.g., ["preset:price"])
         output_format: Response format - "csv" (default), "json", or "compact"
         aggregate: Return single record - "first", "last", or None for all records
     """
@@ -1744,7 +1747,7 @@ async def list_benzinga_firms(
     sort: Optional[str] = None,
     params: Optional[Dict[str, Any]] = None,
     # Output filtering parameters
-    fields: Optional[str] = None,
+    fields: Optional[List[str]] = None,
     output_format: Optional[str] = "csv",
     aggregate: Optional[str] = None,
 ) -> str:
@@ -1753,7 +1756,7 @@ async def list_benzinga_firms(
     
 
     Output Filtering:
-        fields: Comma-separated field names or preset name (e.g., "preset:price", "preset:ohlc")
+        fields: List of field names (e.g., ["ticker", "close"]) or preset (e.g., ["preset:price"])
         output_format: Response format - "csv" (default), "json", or "compact"
         aggregate: Return single record - "first", "last", or None for all records
     """
@@ -1824,7 +1827,7 @@ async def list_benzinga_guidance(
     sort: Optional[str] = None,
     params: Optional[Dict[str, Any]] = None,
     # Output filtering parameters
-    fields: Optional[str] = None,
+    fields: Optional[List[str]] = None,
     output_format: Optional[str] = "csv",
     aggregate: Optional[str] = None,
 ) -> str:
@@ -1833,7 +1836,7 @@ async def list_benzinga_guidance(
     
 
     Output Filtering:
-        fields: Comma-separated field names or preset name (e.g., "preset:price", "preset:ohlc")
+        fields: List of field names (e.g., ["ticker", "close"]) or preset (e.g., ["preset:price"])
         output_format: Response format - "csv" (default), "json", or "compact"
         aggregate: Return single record - "first", "last", or None for all records
     """
@@ -1925,7 +1928,7 @@ async def list_benzinga_news(
     sort: Optional[str] = None,
     params: Optional[Dict[str, Any]] = None,
     # Output filtering parameters
-    fields: Optional[str] = None,
+    fields: Optional[List[str]] = None,
     output_format: Optional[str] = "csv",
     aggregate: Optional[str] = None,
 ) -> str:
@@ -1934,7 +1937,7 @@ async def list_benzinga_news(
     
 
     Output Filtering:
-        fields: Comma-separated field names or preset name (e.g., "preset:price", "preset:ohlc")
+        fields: List of field names (e.g., ["ticker", "close"]) or preset (e.g., ["preset:price"])
         output_format: Response format - "csv" (default), "json", or "compact"
         aggregate: Return single record - "first", "last", or None for all records
     """
@@ -2038,7 +2041,7 @@ async def list_benzinga_ratings(
     sort: Optional[str] = None,
     params: Optional[Dict[str, Any]] = None,
     # Output filtering parameters
-    fields: Optional[str] = None,
+    fields: Optional[List[str]] = None,
     output_format: Optional[str] = "csv",
     aggregate: Optional[str] = None,
 ) -> str:
@@ -2047,7 +2050,7 @@ async def list_benzinga_ratings(
     
 
     Output Filtering:
-        fields: Comma-separated field names or preset name (e.g., "preset:price", "preset:ohlc")
+        fields: List of field names (e.g., ["ticker", "close"]) or preset (e.g., ["preset:price"])
         output_format: Response format - "csv" (default), "json", or "compact"
         aggregate: Return single record - "first", "last", or None for all records
     """
@@ -2131,7 +2134,7 @@ async def list_futures_aggregates(
     sort: Optional[str] = None,
     params: Optional[Dict[str, Any]] = None,
     # Output filtering parameters
-    fields: Optional[str] = None,
+    fields: Optional[List[str]] = None,
     output_format: Optional[str] = "csv",
     aggregate: Optional[str] = None,
 ) -> str:
@@ -2140,7 +2143,7 @@ async def list_futures_aggregates(
     
 
     Output Filtering:
-        fields: Comma-separated field names or preset name (e.g., "preset:price", "preset:ohlc")
+        fields: List of field names (e.g., ["ticker", "close"]) or preset (e.g., ["preset:price"])
         output_format: Response format - "csv" (default), "json", or "compact"
         aggregate: Return single record - "first", "last", or None for all records
     """
@@ -2176,7 +2179,7 @@ async def list_futures_contracts(
     sort: Optional[str] = None,
     params: Optional[Dict[str, Any]] = None,
     # Output filtering parameters
-    fields: Optional[str] = None,
+    fields: Optional[List[str]] = None,
     output_format: Optional[str] = "csv",
     aggregate: Optional[str] = None,
 ) -> str:
@@ -2185,7 +2188,7 @@ async def list_futures_contracts(
     
 
     Output Filtering:
-        fields: Comma-separated field names or preset name (e.g., "preset:price", "preset:ohlc")
+        fields: List of field names (e.g., ["ticker", "close"]) or preset (e.g., ["preset:price"])
         output_format: Response format - "csv" (default), "json", or "compact"
         aggregate: Return single record - "first", "last", or None for all records
     """
@@ -2214,7 +2217,7 @@ async def get_futures_contract_details(
     as_of: Optional[Union[str, date]] = None,
     params: Optional[Dict[str, Any]] = None,
     # Output filtering parameters
-    fields: Optional[str] = None,
+    fields: Optional[List[str]] = None,
     output_format: Optional[str] = "csv",
     aggregate: Optional[str] = None,
 ) -> str:
@@ -2223,7 +2226,7 @@ async def get_futures_contract_details(
     
 
     Output Filtering:
-        fields: Comma-separated field names or preset name (e.g., "preset:price", "preset:ohlc")
+        fields: List of field names (e.g., ["ticker", "close"]) or preset (e.g., ["preset:price"])
         output_format: Response format - "csv" (default), "json", or "compact"
         aggregate: Return single record - "first", "last", or None for all records
     """
@@ -2255,7 +2258,7 @@ async def list_futures_products(
     sort: Optional[str] = None,
     params: Optional[Dict[str, Any]] = None,
     # Output filtering parameters
-    fields: Optional[str] = None,
+    fields: Optional[List[str]] = None,
     output_format: Optional[str] = "csv",
     aggregate: Optional[str] = None,
 ) -> str:
@@ -2264,7 +2267,7 @@ async def list_futures_products(
     
 
     Output Filtering:
-        fields: Comma-separated field names or preset name (e.g., "preset:price", "preset:ohlc")
+        fields: List of field names (e.g., ["ticker", "close"]) or preset (e.g., ["preset:price"])
         output_format: Response format - "csv" (default), "json", or "compact"
         aggregate: Return single record - "first", "last", or None for all records
     """
@@ -2297,7 +2300,7 @@ async def get_futures_product_details(
     as_of: Optional[Union[str, date]] = None,
     params: Optional[Dict[str, Any]] = None,
     # Output filtering parameters
-    fields: Optional[str] = None,
+    fields: Optional[List[str]] = None,
     output_format: Optional[str] = "csv",
     aggregate: Optional[str] = None,
 ) -> str:
@@ -2306,7 +2309,7 @@ async def get_futures_product_details(
     
 
     Output Filtering:
-        fields: Comma-separated field names or preset name (e.g., "preset:price", "preset:ohlc")
+        fields: List of field names (e.g., ["ticker", "close"]) or preset (e.g., ["preset:price"])
         output_format: Response format - "csv" (default), "json", or "compact"
         aggregate: Return single record - "first", "last", or None for all records
     """
@@ -2341,7 +2344,7 @@ async def list_futures_quotes(
     sort: Optional[str] = None,
     params: Optional[Dict[str, Any]] = None,
     # Output filtering parameters
-    fields: Optional[str] = None,
+    fields: Optional[List[str]] = None,
     output_format: Optional[str] = "csv",
     aggregate: Optional[str] = None,
 ) -> str:
@@ -2350,7 +2353,7 @@ async def list_futures_quotes(
     
 
     Output Filtering:
-        fields: Comma-separated field names or preset name (e.g., "preset:price", "preset:ohlc")
+        fields: List of field names (e.g., ["ticker", "close"]) or preset (e.g., ["preset:price"])
         output_format: Response format - "csv" (default), "json", or "compact"
         aggregate: Return single record - "first", "last", or None for all records
     """
@@ -2395,7 +2398,7 @@ async def list_futures_trades(
     sort: Optional[str] = None,
     params: Optional[Dict[str, Any]] = None,
     # Output filtering parameters
-    fields: Optional[str] = None,
+    fields: Optional[List[str]] = None,
     output_format: Optional[str] = "csv",
     aggregate: Optional[str] = None,
 ) -> str:
@@ -2404,7 +2407,7 @@ async def list_futures_trades(
     
 
     Output Filtering:
-        fields: Comma-separated field names or preset name (e.g., "preset:price", "preset:ohlc")
+        fields: List of field names (e.g., ["ticker", "close"]) or preset (e.g., ["preset:price"])
         output_format: Response format - "csv" (default), "json", or "compact"
         aggregate: Return single record - "first", "last", or None for all records
     """
@@ -2440,7 +2443,7 @@ async def list_futures_schedules(
     sort: Optional[str] = None,
     params: Optional[Dict[str, Any]] = None,
     # Output filtering parameters
-    fields: Optional[str] = None,
+    fields: Optional[List[str]] = None,
     output_format: Optional[str] = "csv",
     aggregate: Optional[str] = None,
 ) -> str:
@@ -2449,7 +2452,7 @@ async def list_futures_schedules(
     
 
     Output Filtering:
-        fields: Comma-separated field names or preset name (e.g., "preset:price", "preset:ohlc")
+        fields: List of field names (e.g., ["ticker", "close"]) or preset (e.g., ["preset:price"])
         output_format: Response format - "csv" (default), "json", or "compact"
         aggregate: Return single record - "first", "last", or None for all records
     """
@@ -2480,7 +2483,7 @@ async def list_futures_schedules_by_product_code(
     sort: Optional[str] = None,
     params: Optional[Dict[str, Any]] = None,
     # Output filtering parameters
-    fields: Optional[str] = None,
+    fields: Optional[List[str]] = None,
     output_format: Optional[str] = "csv",
     aggregate: Optional[str] = None,
 ) -> str:
@@ -2489,7 +2492,7 @@ async def list_futures_schedules_by_product_code(
     
 
     Output Filtering:
-        fields: Comma-separated field names or preset name (e.g., "preset:price", "preset:ohlc")
+        fields: List of field names (e.g., ["ticker", "close"]) or preset (e.g., ["preset:price"])
         output_format: Response format - "csv" (default), "json", or "compact"
         aggregate: Return single record - "first", "last", or None for all records
     """
@@ -2520,7 +2523,7 @@ async def list_futures_market_statuses(
     sort: Optional[str] = None,
     params: Optional[Dict[str, Any]] = None,
     # Output filtering parameters
-    fields: Optional[str] = None,
+    fields: Optional[List[str]] = None,
     output_format: Optional[str] = "csv",
     aggregate: Optional[str] = None,
 ) -> str:
@@ -2529,7 +2532,7 @@ async def list_futures_market_statuses(
     
 
     Output Filtering:
-        fields: Comma-separated field names or preset name (e.g., "preset:price", "preset:ohlc")
+        fields: List of field names (e.g., ["ticker", "close"]) or preset (e.g., ["preset:price"])
         output_format: Response format - "csv" (default), "json", or "compact"
         aggregate: Return single record - "first", "last", or None for all records
     """
@@ -2566,7 +2569,7 @@ async def get_futures_snapshot(
     sort: Optional[str] = None,
     params: Optional[Dict[str, Any]] = None,
     # Output filtering parameters
-    fields: Optional[str] = None,
+    fields: Optional[List[str]] = None,
     output_format: Optional[str] = "csv",
     aggregate: Optional[str] = None,
 ) -> str:
@@ -2575,7 +2578,7 @@ async def get_futures_snapshot(
     
 
     Output Filtering:
-        fields: Comma-separated field names or preset name (e.g., "preset:price", "preset:ohlc")
+        fields: List of field names (e.g., ["ticker", "close"]) or preset (e.g., ["preset:price"])
         output_format: Response format - "csv" (default), "json", or "compact"
         aggregate: Return single record - "first", "last", or None for all records
     """
