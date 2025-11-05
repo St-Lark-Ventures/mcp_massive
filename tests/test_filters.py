@@ -3,7 +3,7 @@
 import json
 import pytest
 
-from mcp_polygon.filters import (
+from mcp_massive.filters import (
     FilterOptions,
     parse_filter_params,
     apply_filters,

@@ -4,7 +4,7 @@ import io
 
 import pytest
 
-from mcp_polygon.formatters import (
+from mcp_massive.formatters import (
     json_to_csv,
     json_to_csv_filtered,
     json_to_compact,

@@ -6,7 +6,7 @@ Run these to validate filtering works as expected.
 """
 
 import asyncio
-from mcp_polygon.server import (
+from mcp_massive.server import (
     get_aggs,
     list_trades,
     get_last_trade,
