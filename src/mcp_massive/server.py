@@ -29,6 +29,37 @@ massive_client.headers["User-Agent"] += f" {version_number}"
 poly_mcp = FastMCP("Massive")
 
 
+def _apply_output_filtering(
+    raw_data: bytes,
+    fields: Optional[str] = None,
+    output_format: str = "csv",
+    aggregate: Optional[str] = None,
+) -> str:
+    """
+    Helper function to apply output filtering to API responses.
+
+    Args:
+        raw_data: Raw bytes from API response
+        fields: Field selection (comma-separated or preset like "preset:greeks")
+        output_format: Output format (csv, json, compact)
+        aggregate: Aggregation method (first, last)
+
+    Returns:
+        Filtered and formatted string response
+    """
+    if fields or output_format != "csv" or aggregate:
+        from .filters import parse_filter_params, apply_filters
+        filter_options = parse_filter_params(
+            fields=fields,
+            output_format=output_format,
+            aggregate=aggregate,
+        )
+        return apply_filters(raw_data.decode("utf-8"), filter_options)
+    else:
+        return json_to_csv(raw_data.decode("utf-8"))
+
+
+
 @poly_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def get_aggs(
     ticker: str,
@@ -465,6 +496,86 @@ async def get_snapshot_crypto_book(
     except Exception as e:
         return f"Error: {e}"
 
+
+
+@poly_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+async def list_snapshot_options_chain(
+    underlying_asset: str,
+    strike_price: Optional[float] = None,
+    strike_price_lt: Optional[float] = None,
+    strike_price_lte: Optional[float] = None,
+    strike_price_gt: Optional[float] = None,
+    strike_price_gte: Optional[float] = None,
+    expiration_date: Optional[str] = None,
+    expiration_date_lt: Optional[str] = None,
+    expiration_date_lte: Optional[str] = None,
+    expiration_date_gt: Optional[str] = None,
+    expiration_date_gte: Optional[str] = None,
+    contract_type: Optional[str] = None,
+    limit: Optional[int] = 250,
+    sort: Optional[str] = None,
+    order: Optional[str] = None,
+    fields: Optional[str] = None,
+    output_format: str = "csv",
+    aggregate: Optional[str] = None,
+    params: Optional[Dict[str, Any]] = None,
+) -> str:
+    """
+    Get option chain snapshot for an underlying asset with greeks and market data.
+
+    Returns all option contracts for the specified underlying asset, including
+    current prices, volume, open interest, and greeks (delta, gamma, theta, vega).
+
+    Args:
+        underlying_asset: The underlying ticker symbol (e.g., "AAPL")
+        strike_price: Filter by exact strike price
+        strike_price_lt/lte/gt/gte: Filter by strike price range
+        expiration_date: Filter by exact expiration date (YYYY-MM-DD)
+        expiration_date_lt/lte/gt/gte: Filter by expiration date range
+        contract_type: Filter by contract type ("call" or "put")
+        limit: Maximum number of results (default 250)
+        sort: Sort field
+        order: Sort order ("asc" or "desc")
+        fields: Field selection - comma-separated field names or preset
+                (e.g., "preset:greeks", "preset:options_summary", or "ticker,strike_price,greeks_delta")
+        output_format: Output format - "csv" (default), "json", or "compact"
+        aggregate: Aggregation method - "first" or "last" (for single record)
+        params: Additional API parameters
+
+    Available presets for fields:
+        - "preset:greeks" - Greek values (delta, gamma, theta, vega) with IV
+        - "preset:options_summary" - Price, volume, open interest summary
+        - "preset:options_quote" - Bid/ask quote data
+    """
+    try:
+        results = massive_client.list_snapshot_options_chain(
+            underlying_asset=underlying_asset,
+            strike_price=strike_price,
+            strike_price_lt=strike_price_lt,
+            strike_price_lte=strike_price_lte,
+            strike_price_gt=strike_price_gt,
+            strike_price_gte=strike_price_gte,
+            expiration_date=expiration_date,
+            expiration_date_lt=expiration_date_lt,
+            expiration_date_lte=expiration_date_lte,
+            expiration_date_gt=expiration_date_gt,
+            expiration_date_gte=expiration_date_gte,
+            contract_type=contract_type,
+            limit=limit,
+            sort=sort,
+            order=order,
+            params=params,
+            raw=True,
+        )
+
+        return _apply_output_filtering(
+            results.data,
+            fields=fields,
+            output_format=output_format,
+            aggregate=aggregate,
+        )
+    except Exception as e:
+        return f"Error: {e}"
 
 @poly_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def get_market_holidays(
