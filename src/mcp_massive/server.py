@@ -548,23 +548,46 @@ async def list_snapshot_options_chain(
         - "preset:options_quote" - Bid/ask quote data
     """
     try:
+        # Build params dict with all filter parameters
+        api_params = params.copy() if params else {}
+
+        # Add strike price filters
+        if strike_price is not None:
+            api_params["strike_price"] = strike_price
+        if strike_price_lt is not None:
+            api_params["strike_price.lt"] = strike_price_lt
+        if strike_price_lte is not None:
+            api_params["strike_price.lte"] = strike_price_lte
+        if strike_price_gt is not None:
+            api_params["strike_price.gt"] = strike_price_gt
+        if strike_price_gte is not None:
+            api_params["strike_price.gte"] = strike_price_gte
+
+        # Add expiration date filters
+        if expiration_date is not None:
+            api_params["expiration_date"] = expiration_date
+        if expiration_date_lt is not None:
+            api_params["expiration_date.lt"] = expiration_date_lt
+        if expiration_date_lte is not None:
+            api_params["expiration_date.lte"] = expiration_date_lte
+        if expiration_date_gt is not None:
+            api_params["expiration_date.gt"] = expiration_date_gt
+        if expiration_date_gte is not None:
+            api_params["expiration_date.gte"] = expiration_date_gte
+
+        # Add other filters
+        if contract_type is not None:
+            api_params["contract_type"] = contract_type
+        if limit is not None:
+            api_params["limit"] = limit
+        if sort is not None:
+            api_params["sort"] = sort
+        if order is not None:
+            api_params["order"] = order
+
         results = massive_client.list_snapshot_options_chain(
             underlying_asset=underlying_asset,
-            strike_price=strike_price,
-            strike_price_lt=strike_price_lt,
-            strike_price_lte=strike_price_lte,
-            strike_price_gt=strike_price_gt,
-            strike_price_gte=strike_price_gte,
-            expiration_date=expiration_date,
-            expiration_date_lt=expiration_date_lt,
-            expiration_date_lte=expiration_date_lte,
-            expiration_date_gt=expiration_date_gt,
-            expiration_date_gte=expiration_date_gte,
-            contract_type=contract_type,
-            limit=limit,
-            sort=sort,
-            order=order,
-            params=params,
+            params=api_params if api_params else None,
             raw=True,
         )
 
