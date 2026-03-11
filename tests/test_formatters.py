@@ -1,8 +1,76 @@
 import csv
 import io
+import json
+
+from mcp_massive.formatters import (
+    json_to_csv,
+    extract_records,
+    _flatten_dict,
+    strip_response_metadata,
+)
+from mcp_massive.server import METADATA_KEYS
 
 
-from mcp_massive.formatters import json_to_csv, _flatten_dict
+class TestStripResponseMetadata:
+    """Tests for the strip_response_metadata helper function."""
+
+    def test_removes_specified_keys(self):
+        json_text = '{"request_id": "abc", "status": "OK", "results": [{"t": 1}]}'
+        result = strip_response_metadata(json_text, {"request_id", "status"})
+        data = json.loads(result)
+        assert "request_id" not in data
+        assert "status" not in data
+        assert "results" in data
+
+    def test_preserves_data_keys(self):
+        json_text = (
+            '{"results": [{"ticker": "AAPL"}], "count": 1, "next_url": "http://x"}'
+        )
+        result = strip_response_metadata(json_text, {"count"})
+        data = json.loads(result)
+        assert "results" in data
+        assert "count" not in data
+        assert "next_url" in data  # next_url is preserved for pagination
+
+    def test_next_url_preserved_after_metadata_strip(self):
+        """Verify next_url is preserved through metadata stripping for pagination.
+
+        METADATA_KEYS strips request_id, status, etc. but NOT next_url.
+        The call_api function extracts next_url separately to produce a
+        pagination hint for the LLM.
+        """
+        response = json.dumps(
+            {
+                "results": [
+                    {"t": 1704067200000, "c": 185.56, "h": 186.10, "l": 183.82},
+                    {"t": 1704153600000, "c": 185.01, "h": 186.74, "l": 184.35},
+                ],
+                "next_url": "https://api.massive.com/v2/aggs/ticker/AAPL/range/1/day/2024-01-01/2024-01-31?cursor=abc123",
+                "request_id": "req-001",
+                "resultsCount": 2,
+                "status": "OK",
+            }
+        )
+        stripped = strip_response_metadata(response, METADATA_KEYS)
+        parsed = json.loads(stripped)
+        assert "next_url" in parsed  # preserved for pagination
+        assert "request_id" not in parsed
+        assert "resultsCount" not in parsed
+        assert "status" not in parsed
+        assert len(parsed["results"]) == 2
+        assert parsed["results"][0]["c"] == 185.56
+
+    def test_handles_missing_keys(self):
+        json_text = '{"results": [{"t": 1}]}'
+        result = strip_response_metadata(json_text, {"request_id", "status"})
+        data = json.loads(result)
+        assert "results" in data
+
+    def test_handles_non_dict(self):
+        json_text = "[1, 2, 3]"
+        result = strip_response_metadata(json_text, {"key"})
+        data = json.loads(result)
+        assert data == [1, 2, 3]
 
 
 class TestFlattenDict:
@@ -255,6 +323,7 @@ class TestJsonToCsvStdlib:
         assert len(rows) == 3
 
         headers = reader.fieldnames
+        assert headers is not None
         assert "ticker" in headers
         assert "price" in headers
         assert "volume" in headers
@@ -423,3 +492,63 @@ class TestJsonToCsvStdlib:
         assert rows[0]["name"] == "Café"
         assert rows[0]["symbol"] == "€"
         assert rows[0]["emoji"] == "🚀"
+
+
+class TestExtractRecords:
+    """Tests for the extract_records function."""
+
+    def test_results_key_list(self):
+        data = {"results": [{"ticker": "AAPL"}, {"ticker": "GOOG"}]}
+        records = extract_records(data)
+        assert len(records) == 2
+        assert records[0]["ticker"] == "AAPL"
+        assert records[1]["ticker"] == "GOOG"
+
+    def test_results_key_single_object(self):
+        data = {"results": {"ticker": "AAPL", "price": 150}}
+        records = extract_records(data)
+        assert len(records) == 1
+        assert records[0]["ticker"] == "AAPL"
+
+    def test_last_key(self):
+        data = {"last": {"price": 100, "size": 50}}
+        records = extract_records(data)
+        assert len(records) == 1
+        assert records[0]["price"] == 100
+
+    def test_plain_list(self):
+        data = [{"a": 1}, {"a": 2}]
+        records = extract_records(data)
+        assert len(records) == 2
+
+    def test_single_object(self):
+        data = {"market": "open", "afterHours": False}
+        records = extract_records(data)
+        assert len(records) == 1
+        assert records[0]["market"] == "open"
+
+    def test_string_input(self):
+        data = '{"results": [{"x": 1}]}'
+        records = extract_records(data)
+        assert len(records) == 1
+        assert records[0]["x"] == 1
+
+    def test_invalid_json_string(self):
+        records = extract_records("not valid json {")
+        assert records == []
+
+    def test_flattening_happens(self):
+        data = {"results": [{"outer": {"inner": "val"}}]}
+        records = extract_records(data)
+        assert records[0]["outer_inner"] == "val"
+
+    def test_empty_results(self):
+        data = {"results": []}
+        records = extract_records(data)
+        assert records == []
+
+    def test_non_dict_records(self):
+        data = [1, 2, 3]
+        records = extract_records(data)
+        assert len(records) == 3
+        assert records[0] == {"value": "1"}
