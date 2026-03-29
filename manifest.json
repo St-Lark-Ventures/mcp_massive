@@ -2,7 +2,7 @@
   "manifest_version": "0.4",
   "name": "mcp_massive",
   "display_name": "Massive Market Data",
-  "version": "1.0.3",
+  "version": "1.0.7",
   "description": "Stocks, options & indices market data via Massive.com financial data API. Access real-time and historical prices, quotes, trades, and aggregates for equities, options contracts, ETFs, FX, crypto, and more.",
   "author": {
     "name": "Massive",
@@ -20,18 +20,6 @@
     "https://massive.com/legal/privacy"
   ],
   "icon": "assets/icon-massive-lightmode.png",
-  "icons": [
-    {
-      "src": "assets/icon-massive-lightmode.png",
-      "size": "512x512",
-      "theme": "light"
-    },
-    {
-      "src": "assets/icon-massive-darkmode.png",
-      "size": "512x512",
-      "theme": "dark"
-    }
-  ],
   "keywords": [
     "finance",
     "market-data",

@@ -72,7 +72,7 @@ Install the MCP server, then register it with Claude Code:
 
 ```bash
 # Install the server (one-time — downloads dependencies ahead of time)
-uv tool install "mcp_massive @ git+https://github.com/massive-com/mcp_massive@v0.8.3"
+uv tool install "mcp_massive @ git+https://github.com/massive-com/mcp_massive@v0.8.7"
 
 # Register with Claude Code
 claude mcp add massive -e MASSIVE_API_KEY=your_api_key_here -- mcp_massive
@@ -102,7 +102,7 @@ You can also run `claude mcp add-from-claude-desktop` if the MCP server is insta
 1. Install the server:
 
 ```bash
-uv tool install "mcp_massive @ git+https://github.com/massive-com/mcp_massive@v0.8.3"
+uv tool install "mcp_massive @ git+https://github.com/massive-com/mcp_massive@v0.8.7"
 ```
 
 3. Find the installed binary path:
@@ -243,6 +243,7 @@ This MCP server interacts with Massive.com's API to fetch market data. All data 
 - **Massive.com Privacy Policy**: https://massive.com/legal/privacy
 - **Data Handling**: This server does not store or cache any user data. All requests are proxied directly to Massive.com's API.
 - **API Key**: Your Massive.com API key is used only for authenticating requests to their API.
+- **User-Agent**: API requests include a User-Agent string containing the MCP server version (e.g., `MCP-Massive/0.x.y`). No personally identifiable information is included.
 
 ## Contributing
 If you found a bug or have an idea for a new feature, please first discuss it with us by submitting a new issue.

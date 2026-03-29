@@ -488,13 +488,12 @@ class TestRollingStd:
         expected = np.std([2.0, 4.0, 4.0], ddof=1)
         assert abs(result[2] - expected) < 1e-10
 
+    @pytest.mark.filterwarnings("ignore::RuntimeWarning")
     def test_window_1_returns_nan(self):
         """std with ddof=1 and window=1 is undefined (0/0)."""
         arr = np.array([1.0, 2.0, 3.0])
         result = _rolling_std(arr, 1)
-        # np.std with ddof=1 on a single element gives NaN or warning
-        # Either NaN or 0 is acceptable; the key is it doesn't crash
-        assert len(result) == 3
+        assert np.all(np.isnan(result))
 
     def test_with_nan(self):
         arr = np.array([1.0, np.nan, 3.0, 4.0])

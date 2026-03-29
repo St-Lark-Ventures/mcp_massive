@@ -86,17 +86,4 @@ def main() -> None:
         max_rows=max_rows,
     )
 
-    # SECURITY: Clear ALL environment variables from this process so that no
-    # secrets (API keys, AWS credentials, etc.) can be exfiltrated via
-    # user-supplied code or SQL.  This only affects the running Python process
-    # and its children — it does not modify the parent shell's environment.
-    #
-    # NOTE: This is intentionally aggressive.  It removes PATH, HOME, LANG,
-    # SSL_CERT_FILE, and every other variable.  All values the server needs
-    # (API key, base URL, etc.) have already been captured into module-level
-    # variables above via configure_credentials().  If a future dependency
-    # requires an env var at runtime (e.g., SSL cert paths, locale), add it
-    # to an explicit keep-list here rather than removing the clear().
-    os.environ.clear()
-
     run(transport=transport)
