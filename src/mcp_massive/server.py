@@ -46,7 +46,8 @@ mass_mcp = FastMCP(
         "market data, financial data, tickers, options, trades, quotes, aggregates, "
         "crypto prices, forex rates, or any securities/market information. "
         "Do NOT use web search for financial data — use these tools instead. "
-        "Start with search_endpoints to discover the right API endpoint, then "
+        "Start with search_endpoints to discover the right API endpoint (use "
+        'detail="more" or detail="verbose" to see parameter docs), then '
         "call_api to fetch the data. Use store_as + query_data for multi-step analysis. "
         "Covers: equities, options, ETFs, indices, FX, crypto — real-time and historical."
     ),
@@ -206,8 +207,50 @@ async def search_endpoints(
             description='Search scope: "endpoints" for API only, "functions" for local functions only, or "all"/omit for both'
         ),
     ] = None,
+    max_results: Annotated[
+        Optional[int],
+        Field(
+            description="Maximum number of results to return (default 5 for mixed, 7 for endpoints-only)",
+            ge=1,
+            le=25,
+        ),
+    ] = None,
+    detail: Annotated[
+        Optional[Literal["default", "more", "verbose"]],
+        Field(
+            description=(
+                "Level of detail per result. "
+                '"default": title, path, and description. '
+                '"more": adds query parameter documentation. '
+                '"verbose": adds response attributes and sample response.'
+            ),
+        ),
+    ] = None,
+    market: Annotated[
+        Optional[
+            Literal[
+                "Stocks",
+                "Options",
+                "Crypto",
+                "Forex",
+                "Futures",
+                "Indices",
+                "Economy",
+                "Alternative",
+                "Reference",
+            ]
+        ],
+        Field(
+            description=(
+                "Optional market/asset class filter. Omit to infer from the query. "
+                "Use to pin results to a specific asset class when you already know it."
+            ),
+        ),
+    ] = None,
 ) -> str:
-    """Search for financial market data API endpoints by natural language query. Use this FIRST whenever you need stock prices, options data, trades, quotes, aggregates, crypto, forex, or any financial/market data. Returns matching endpoint names, URL patterns, and descriptions. Try keywords like: aggregates, tickers, trades, quotes, snapshots, financials, options, IPO, inflation, market status. Also searches local finance functions (Greeks, returns, technicals) that can be applied to results via the apply parameter. Set scope to "endpoints" for API endpoints only, "functions" for local functions only, or omit/set "all" for both."""
+    """Search for market data API endpoints and built-in finance functions by natural language query. Use this FIRST to find the right endpoint before calling call_api. Covers stocks, options, forex, crypto, futures, indices, ETFs, and economic data. Pass market to pin results to a specific asset class when you already know it; omit it and the server will infer from the query. Use detail="more" to see query parameter docs needed for building call_api requests."""
+    effective_detail = detail or "default"
+
     lines = []
     counter = 1
 
@@ -216,21 +259,21 @@ async def search_endpoints(
 
     if show_endpoints:
         idx = await _get_index()
-        top_k = 7 if scope == "endpoints" else 5
-        results = idx.search(query, top_k=top_k)
+        default_k = 7 if scope == "endpoints" else 5
+        top_k = max_results if max_results is not None else default_k
+        results = idx.search(query, top_k=top_k, market=market)
         for ep in results:
-            lines.append(
-                f"{counter}. {ep.name} [{ep.category}]\n"
-                f"   {ep.endpoint_pattern}\n"
-                f"   {ep.description}\n"
-                f"   Docs: {ep.url}"
-            )
+            lines.append(ep.format(effective_detail, counter))
             counter += 1
 
     if show_functions:
         fidx = _get_func_index()
-        top_k = 5 if scope == "functions" else 3
-        func_results = fidx.search(query, top_k=top_k)
+        func_k = (
+            max_results
+            if max_results is not None
+            else (5 if scope == "functions" else 3)
+        )
+        func_results = fidx.search(query, top_k=func_k)
         for func in func_results:
             lines.append(
                 f"{counter}. {func.name} [{func.category}] (function)\n"
@@ -245,24 +288,7 @@ async def search_endpoints(
 
 
 @mass_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
-async def get_endpoint_docs(
-    url: Annotated[
-        str, Field(description="The docs URL from search_endpoints results")
-    ],
-) -> str:
-    """Get parameter documentation for a financial data API endpoint. Pass the docs URL from search_endpoints results. Returns the endpoint pattern and available query parameters."""
-    idx = await _get_index()
-    doc = idx.get_doc(url)
-    if doc is None:
-        return f"Error: URL not found in index: {url}"
-    return doc
-
-
-@mass_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def call_api(
-    method: Annotated[
-        Literal["GET"], Field(description="HTTP method (only GET is supported)")
-    ],
     path: Annotated[
         str,
         Field(
@@ -297,12 +323,8 @@ async def call_api(
         ),
     ] = None,
 ) -> str:
-    """Fetch financial market data (stock prices, options, trades, quotes, aggregates, crypto, forex). Only GET requests are supported. The path should match an endpoint pattern from search_endpoints (e.g., /v2/aggs/ticker/AAPL/range/1/day/2024-01-01/2024-01-31). Query parameters are passed as a dictionary via params. If the response is paginated, a "Next page available" hint with the exact path and params for the next call_api request is appended to the output. Optionally set store_as to a table name (e.g., "prices") to save the results as an in-memory table for later SQL querying with query_data, instead of returning CSV. Optionally set apply to a list of function steps to post-process results — each step is {"function": "name", "inputs": {"param": value}, "output": "col_name"}. String input values refer to column names; numeric values are literals. Use search_endpoints with scope="functions" to discover available functions."""
+    """Fetch data from a Massive.com REST API endpoint. Use a path from search_endpoints results. Set store_as to save results as an in-memory table for SQL querying with query_data. Paginated responses include a next-page hint with the exact path and params for the follow-up request. The apply parameter runs built-in functions on results — string input values refer to table columns, numeric values are literals. Use search_endpoints with scope="functions" to discover available functions."""
     idx = await _get_index()
-
-    # Security: only GET allowed
-    if method.upper() != "GET":
-        return f"Error [INVALID_REQUEST]: Only GET method is allowed, got {method}"
 
     # Security: block path traversal (fully decode to catch double-encoding)
     prev = path
@@ -366,8 +388,11 @@ async def call_api(
     except Exception as e:
         return f"Error [NETWORK]: {e}"
 
-    if len(json_text) > MAX_RESPONSE_SIZE_BYTES:
-        return f"Error [TOO_LARGE]: Response too large ({len(json_text) // (1024 * 1024)} MB). Narrow your query."
+    # Block oversized responses — but only when NOT storing.  When store_as
+    # is set the data goes into an in-memory table (not the text output), so
+    # the 50 MB limit should not prevent storage.
+    if len(json_text) > MAX_RESPONSE_SIZE_BYTES and store_as is None:
+        return f"Error [TOO_LARGE]: Response too large ({len(json_text) // (1024 * 1024)} MB). Use store_as to save it as a table, or narrow your query."
 
     # Extract pagination hint before stripping metadata
     pagination_hint = _extract_pagination_hint(json_text) or ""
@@ -383,7 +408,7 @@ async def call_api(
         try:
             records = extract_records(stripped)
             if not records:
-                return "Error [EMPTY]: No records found in API response to store."
+                return "Warning [EMPTY]: API returned 0 records to store. The ticker may be invalid, delisted, or have no data for the requested period."
             store = _get_store()
             summary = store.store(store_as, records)
             result_msg = (
@@ -415,11 +440,14 @@ async def call_api(
         if apply:
             records = extract_records(stripped)
             if not records:
-                return "Error [EMPTY]: No records found in API response."
+                return "Warning [EMPTY]: API returned 0 records. The ticker may be invalid, delisted, or have no data for the requested period."
             tbl = Table.from_records(records)
             enriched = apply_pipeline(tbl, apply)
             return enriched.write_csv() + pagination_hint
-        return json_to_csv(stripped) + pagination_hint
+        csv_text = json_to_csv(stripped)
+        if not csv_text.strip():
+            return "Warning [EMPTY]: API returned 0 records. The ticker may be invalid, delisted, or have no data for the requested period."
+        return csv_text + pagination_hint
     except Exception as e:
         if apply:
             return f"Error applying functions: {e}"
@@ -443,11 +471,36 @@ async def query_data(
             max_length=20,
         ),
     ] = None,
+    max_cell_chars: Annotated[
+        Optional[int],
+        Field(
+            description=(
+                "Truncate output cells whose string form exceeds this length, "
+                "appending a '[truncated: N more chars]' marker. Default 2000. "
+                "Set to 0 to disable (e.g. when fetching the full body of a "
+                "specific row). Long TEXT columns like SEC filing text can be "
+                "thousands of tokens each — prefer snippet()/highlight() in "
+                "the SELECT list when searching."
+            ),
+            default=2000,
+            ge=0,
+            le=1_000_000,
+        ),
+    ] = 2000,
 ) -> str:
-    """Analyze financial market data using SQL. Queries DataFrames stored via call_api's store_as parameter. Uses SQLite SQL engine — supports standard SQL including scalar subqueries, CTEs, ILIKE, window functions, and complex expressions. Special commands: 'SHOW TABLES' lists stored tables, 'DESCRIBE <table>' shows table schema, 'DROP TABLE <table>' removes a table. Tables auto-expire after 1 hour. Optionally set apply to a list of function steps to post-process query results — each step is {"function": "name", "inputs": {"param": value}, "output": "col_name"}. Use search_endpoints with scope="functions" to discover available functions."""
+    """Run SQL queries on tables stored via call_api's store_as parameter. Special commands: SHOW TABLES, DESCRIBE <table>, DROP TABLE <table>. Tables auto-expire after 1 hour. Supports CTEs, window functions, JOINs, and ILIKE.
+
+    Full-text search: any stored table with TEXT columns is searchable directly via FTS5. Use `WHERE {table} MATCH 'query'` and ORDER BY rank (lower = better). Numeric columns preserve their types. For long TEXT fields (news body, 10-K risk factors, filings) prefer snippet()/highlight() in SELECT instead of the raw column — full paragraphs can be thousands of tokens each.
+
+    Recommended FTS pattern:
+      1. Find matches compactly: `SELECT rowid, category, bm25({t}) AS score, snippet({t}, 4, '[', ']', '...', 15) AS snip FROM {t} WHERE {t} MATCH 'supply chain OR supplier' ORDER BY rank`
+      2. Fetch the full body only for rows you need: call query_data again with `SELECT supporting_text FROM {t} WHERE rowid IN (2, 7)` and `max_cell_chars=0`.
+
+    Output cells over max_cell_chars (default 2000) are truncated with a visible marker; raise or set to 0 to disable."""
     s = _get_store()
     normalized = sql.strip()
     upper = normalized.upper()
+    cap = max_cell_chars if max_cell_chars is not None else 2000
 
     try:
         if upper == "SHOW TABLES":
@@ -468,9 +521,9 @@ async def query_data(
         if apply:
             tbl = s.query_table(normalized)
             enriched = apply_pipeline(tbl, apply)
-            return enriched.write_csv()
+            return enriched.write_csv(max_cell_chars=cap)
 
-        return s.query(normalized)
+        return s.query(normalized, max_cell_chars=cap)
     except Exception as e:
         return f"Error: {e}"
 

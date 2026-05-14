@@ -5,9 +5,11 @@ import re
 import sqlite3
 import time
 from typing import Any, cast
+from datetime import datetime, timezone
 
 import sqlglot
 from sqlglot import exp
+from sqlglot.errors import ParseError as SQLParseError
 from pydantic import BaseModel, Field
 
 TABLE_NAME_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]{0,62}$")
@@ -39,10 +41,37 @@ _BLOCKED_FUNC_NAMES: frozenset[str] = frozenset(
     }
 )
 
+# Custom functions registered via _register_custom_functions, plus FTS5
+# ranking/highlighting built-ins, that sqlglot parses as Anonymous nodes.
+# These are safe and must be explicitly allowed through the AST validator.
+_CUSTOM_ANONYMOUS_FUNCTIONS: frozenset[str] = frozenset(
+    {
+        "to_timestamp",
+        "to_date",
+        # FTS5 ranking and highlighting built-ins
+        "bm25",
+        "snippet",
+        "highlight",
+    }
+)
+
+# SQLite read-only PRAGMAs the authorizer must allow because FTS5 invokes
+# them internally during MATCH queries.  Users cannot trigger these: the
+# statement-type check in _validate_sql rejects any user-issued PRAGMA.
+_AUTHORIZER_ALLOWED_PRAGMAS: frozenset[str] = frozenset(
+    {
+        "data_version",
+    }
+)
+
 DEFAULT_MAX_TABLES = 50
 DEFAULT_MAX_ROWS = 50_000
 TTL_SECONDS = 3600
 QUERY_TIMEOUT_SECONDS = 30
+# Cells in a StoreSummary preview are capped tightly — the preview is meant
+# to convey schema and shape, not content.  Long-text rows (e.g. filings)
+# would otherwise blow up the call_api response in tokens.
+PREVIEW_MAX_CELL_CHARS = 200
 
 # Functions allowed through the SQLite authorizer.  This must include every
 # custom function registered via _register_custom_functions as well as safe
@@ -57,6 +86,9 @@ _AUTHORIZER_ALLOWED_FUNCTIONS: frozenset[str] = frozenset(
         "concat",
         "stddev",
         "stddev_samp",
+        "corr",
+        "to_timestamp",
+        "to_date",
         # Standard SQLite aggregates / scalars
         "count",
         "sum",
@@ -115,6 +147,11 @@ _AUTHORIZER_ALLOWED_FUNCTIONS: frozenset[str] = frozenset(
         "unlikely",
         # CASE is not a function but some drivers report it
         "case",
+        # FTS5 MATCH operator and ranking/highlighting built-ins
+        "match",
+        "bm25",
+        "snippet",
+        "highlight",
     }
 )
 
@@ -138,7 +175,31 @@ def _select_only_authorizer(
         if arg2 is not None and arg2.lower() in _AUTHORIZER_ALLOWED_FUNCTIONS:
             return sqlite3.SQLITE_OK
         return sqlite3.SQLITE_DENY
+    # FTS5 issues PRAGMA data_version internally to detect schema changes.
+    # User-issued PRAGMAs are already blocked by _validate_sql, so this is
+    # only reachable for trusted internal callers.
+    if action == sqlite3.SQLITE_PRAGMA:
+        if arg1 is not None and arg1.lower() in _AUTHORIZER_ALLOWED_PRAGMAS:
+            return sqlite3.SQLITE_OK
+        return sqlite3.SQLITE_DENY
     return sqlite3.SQLITE_DENY
+
+
+def _truncate_cell(value: Any, max_chars: int) -> Any:
+    """Return *value* unchanged unless its string form exceeds *max_chars*.
+
+    When truncation fires, the returned string ends with a marker like
+    ``... [truncated: N more chars]`` so an LLM caller can see how much
+    was elided and decide whether to re-query with ``max_cell_chars=0``
+    or a tighter ``WHERE`` clause.
+    """
+    if value is None:
+        return None
+    s = value if isinstance(value, str) else str(value)
+    if len(s) <= max_chars:
+        return value
+    excess = len(s) - max_chars
+    return f"{s[:max_chars]}... [truncated: {excess} more chars]"
 
 
 class Table:
@@ -169,21 +230,42 @@ class Table:
 
         Preserves insertion order of keys across all records.
         Fills missing keys with None.
+        When two columns differ only in case (e.g. ``T`` and ``t``),
+        the later column is renamed with a ``_2`` suffix to avoid
+        SQLite case-insensitive collisions.
         """
         if not records:
             return cls([], {})
-        # Collect all keys in insertion order
+        # Collect all keys in insertion order (original casing)
         seen: set[str] = set()
-        columns: list[str] = []
+        raw_columns: list[str] = []
         for rec in records:
             for key in rec:
                 if key not in seen:
                     seen.add(key)
-                    columns.append(key)
+                    raw_columns.append(key)
+
+        # Deduplicate case-insensitive collisions for SQLite compatibility
+        ci_seen: set[str] = set()
+        columns: list[str] = []
+        col_map: dict[str, str] = {}  # original key -> final column name
+        for col in raw_columns:
+            if col.lower() in ci_seen:
+                renamed = f"{col}_2"
+                while renamed.lower() in ci_seen:
+                    renamed += "_2"
+                columns.append(renamed)
+                ci_seen.add(renamed.lower())
+                col_map[col] = renamed
+            else:
+                columns.append(col)
+                ci_seen.add(col.lower())
+                col_map[col] = col
+
         data: dict[str, list] = {col: [] for col in columns}
         for rec in records:
-            for col in columns:
-                data[col].append(rec.get(col))
+            for raw_col in raw_columns:
+                data[col_map[raw_col]].append(rec.get(raw_col))
         return cls(columns, data)
 
     def __len__(self) -> int:
@@ -199,12 +281,25 @@ class Table:
         length = len(self)
         return [tuple(self.data[col][i] for col in self.columns) for i in range(length)]
 
-    def write_csv(self) -> str:
+    def write_csv(self, max_cell_chars: int = 0) -> str:
+        """Serialize the table as CSV.
+
+        If ``max_cell_chars > 0``, any cell whose string representation
+        exceeds that length is truncated with a visible marker so the
+        caller knows how many characters were omitted.  Useful for
+        long FTS5 TEXT columns (e.g. 10-K risk factors) where a single
+        row can be thousands of tokens.  ``max_cell_chars = 0`` leaves
+        all cells untouched.
+        """
         buf = io.StringIO()
         writer = csv.writer(buf, lineterminator="\n")
         writer.writerow(self.columns)
-        for row in self.rows():
-            writer.writerow(row)
+        if max_cell_chars <= 0:
+            for row in self.rows():
+                writer.writerow(row)
+        else:
+            for row in self.rows():
+                writer.writerow(tuple(_truncate_cell(v, max_cell_chars) for v in row))
         return buf.getvalue()
 
     def get_column(self, name: str) -> list:
@@ -288,18 +383,55 @@ def _infer_sqlite_affinity(values: list) -> str:
     return "TEXT"
 
 
+# FTS5 reserves these identifiers; a user column with this name collides
+# with the virtual table's own hidden columns, so we fall back to a plain
+# table when any column uses one of these names.
+_FTS5_RESERVED_COLUMN_NAMES: frozenset[str] = frozenset({"rank", "rowid"})
+
+
 def _create_and_populate_table(
     conn: sqlite3.Connection, name: str, table: Table
 ) -> None:
-    """Create a SQLite table from a Table and bulk-insert rows."""
+    """Create a SQLite table from a Table and bulk-insert rows.
+
+    When at least one column has TEXT affinity and there are no
+    FTS5-reserved column-name collisions, the table is created as an
+    FTS5 virtual table with non-text columns marked ``UNINDEXED``.
+    This lets users run ``WHERE {name} MATCH 'query'`` directly on
+    the base table — no mirror, no JOIN.  FTS5 preserves SQLite's
+    dynamic type for stored values, so numeric ORDER BY and
+    SUM/AVG/MIN/MAX work as they would on a plain table.
+
+    Falls back to a plain ``CREATE TABLE`` when:
+      - the table has no TEXT columns, or
+      - a column name collides with FTS5 reserved names (``rank``,
+        ``rowid``) or the table's own name.
+    """
     cols = table.columns
-    affinities = [_infer_sqlite_affinity(table.data[c]) for c in cols]
-    col_defs = ", ".join(f'"{c}" {a}' for c, a in zip(cols, affinities))
-    conn.execute(f'CREATE TABLE "{name}" ({col_defs})')
+    text_cols = {c for c in cols if _infer_sqlite_affinity(table.data[c]) == "TEXT"}
+    lower_names = {c.lower() for c in cols}
+    reserved_collision = bool(lower_names & _FTS5_RESERVED_COLUMN_NAMES)
+    name_collision = name.lower() in lower_names
+
+    if text_cols and not reserved_collision and not name_collision:
+        col_defs_parts = [
+            f'"{c}"' if c in text_cols else f'"{c}" UNINDEXED' for c in cols
+        ]
+        col_defs = ", ".join(col_defs_parts)
+        conn.execute(
+            f'CREATE VIRTUAL TABLE "{name}" USING fts5('
+            f"{col_defs}, tokenize='porter unicode61')"
+        )
+    else:
+        affinities = [_infer_sqlite_affinity(table.data[c]) for c in cols]
+        col_defs = ", ".join(f'"{c}" {a}' for c, a in zip(cols, affinities))
+        conn.execute(f'CREATE TABLE "{name}" ({col_defs})')
+
     if len(table) > 0:
         placeholders = ", ".join("?" for _ in cols)
+        col_list = ", ".join(f'"{c}"' for c in cols)
         conn.executemany(
-            f'INSERT INTO "{name}" VALUES ({placeholders})',
+            f'INSERT INTO "{name}" ({col_list}) VALUES ({placeholders})',
             table.rows(),
         )
 
@@ -323,6 +455,101 @@ class _StddevAggregate:
         return math.sqrt(variance)
 
 
+class _CorrAggregate:
+    """SQLite custom aggregate for Pearson correlation coefficient."""
+
+    def __init__(self) -> None:
+        self.xs: list[float] = []
+        self.ys: list[float] = []
+
+    def step(self, x: float | None, y: float | None) -> None:
+        if x is not None and y is not None:
+            self.xs.append(float(x))
+            self.ys.append(float(y))
+
+    def finalize(self) -> float | None:
+        n = len(self.xs)
+        if n < 2:
+            return None
+        mean_x = sum(self.xs) / n
+        mean_y = sum(self.ys) / n
+        cov = sum((x - mean_x) * (y - mean_y) for x, y in zip(self.xs, self.ys))
+        var_x = sum((x - mean_x) ** 2 for x in self.xs)
+        var_y = sum((y - mean_y) ** 2 for y in self.ys)
+        denom = math.sqrt(var_x * var_y)
+        if denom == 0:
+            return None
+        return cov / denom
+
+
+def _epoch_to_seconds(value: float | int) -> float:
+    """Normalize a numeric epoch timestamp (seconds, ms, or ns) to seconds.
+
+    Heuristic based on digit count:
+      - 10 digits → seconds   (unix epoch ~1.7e9)
+      - 13 digits → ms        (most Massive API fields: ``t``, ``sip_timestamp``)
+      - 16+ digits → ns       (snapshot ``last_updated`` fields)
+    """
+    v = float(value)
+    abs_v = abs(v)
+    if abs_v > 1e15:  # nanoseconds
+        return v / 1e9
+    if abs_v > 1e11:  # milliseconds
+        return v / 1e3
+    return v  # already seconds
+
+
+def _to_timestamp(value: float | int | str | None) -> str | None:
+    """Convert a timestamp to ISO-8601 UTC datetime string.
+
+    Accepts epoch seconds/ms/ns (auto-detected by magnitude) or an
+    ISO-8601 string (returned as-is after validation).
+    """
+    if value is None:
+        return None
+
+    if isinstance(value, str):
+        # Already a string timestamp — return as-is if it looks like a date
+        stripped = value.strip()
+        if stripped and (stripped[0].isdigit() or stripped[0] == "-"):
+            # Might be a numeric string — try parsing as number
+            try:
+                return _to_timestamp(float(stripped))
+            except ValueError:
+                pass
+        return stripped  # ISO-8601 or date string — pass through
+
+    return datetime.fromtimestamp(_epoch_to_seconds(value), tz=timezone.utc).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    )
+
+
+def _to_date(value: float | int | str | None) -> str | None:
+    """Convert a timestamp to a UTC date string (YYYY-MM-DD).
+
+    Accepts epoch seconds/ms/ns (auto-detected by magnitude) or an
+    ISO-8601 string.  Useful for cross-asset JOINs where crypto bars
+    use midnight UTC and equity bars use 4 AM ET.
+    """
+    if value is None:
+        return None
+
+    if isinstance(value, str):
+        stripped = value.strip()
+        # If it already looks like YYYY-MM-DD, return the date portion
+        if re.compile(r"^\d{4}-\d{2}-\d{2}").match(stripped):
+            return stripped[:10]
+        # Numeric string
+        try:
+            return _to_date(float(stripped))
+        except ValueError:
+            return stripped
+
+    return datetime.fromtimestamp(_epoch_to_seconds(value), tz=timezone.utc).strftime(
+        "%Y-%m-%d"
+    )
+
+
 def _register_custom_functions(conn: sqlite3.Connection) -> None:
     """Register math and string functions that SQLite lacks."""
     conn.create_function("SQRT", 1, lambda x: math.sqrt(x) if x is not None else None)
@@ -336,11 +563,14 @@ def _register_custom_functions(conn: sqlite3.Connection) -> None:
     conn.create_function(
         "CONCAT", -1, lambda *args: "".join(str(a) for a in args if a is not None)
     )
+    conn.create_function("TO_TIMESTAMP", 1, _to_timestamp)
+    conn.create_function("TO_DATE", 1, _to_date)
     # The typeshed _AggregateProtocol uses narrow int types in its stubs,
     # but sqlite3 accepts any scalar at runtime.  Use cast(Any, ...) so
     # the type checker does not reject the class.
     conn.create_aggregate("STDDEV", 1, cast(Any, _StddevAggregate))
     conn.create_aggregate("STDDEV_SAMP", 1, cast(Any, _StddevAggregate))
+    conn.create_aggregate("CORR", 2, cast(Any, _CorrAggregate))
 
 
 def _rewrite_count_filter(tree: exp.Expression) -> exp.Expression:
@@ -384,9 +614,10 @@ def _preprocess_sql(sql: str) -> str:
     """
     try:
         tree = sqlglot.parse_one(sql, dialect="sqlite")
+        assert isinstance(tree, exp.Expression)
         tree = _rewrite_count_filter(tree)
         sql = tree.sql(dialect="sqlite")
-    except sqlglot.errors.ParseError:
+    except SQLParseError:
         pass  # fall through with original SQL; _validate_sql will catch errors
     return sql
 
@@ -464,7 +695,7 @@ class DataFrameStore:
         self._tables[name] = (table, time.time())
 
         preview_table = table.head(5)
-        preview_csv = preview_table.write_csv()
+        preview_csv = preview_table.write_csv(max_cell_chars=PREVIEW_MAX_CELL_CHARS)
 
         return StoreSummary(
             table_name=name,
@@ -473,16 +704,19 @@ class DataFrameStore:
             preview=preview_csv,
         )
 
-    def query(self, sql: str) -> str:
+    def query(self, sql: str, max_cell_chars: int = 0) -> str:
         """Execute a SQL SELECT query across all stored tables.
 
         Args:
             sql: SQL query string.
+            max_cell_chars: If > 0, truncate output cells whose string
+                form exceeds this length with a visible marker.  0
+                (default) leaves cells untouched.
 
         Returns:
             CSV string of the query result.
         """
-        return self._execute_sql(sql).write_csv()
+        return self._execute_sql(sql).write_csv(max_cell_chars=max_cell_chars)
 
     def show_tables(self) -> str:
         """List all stored tables with metadata."""
@@ -589,7 +823,7 @@ class DataFrameStore:
         self._tables[name] = (table, time.time())
 
         preview_table = table.head(5)
-        preview_csv = preview_table.write_csv()
+        preview_csv = preview_table.write_csv(max_cell_chars=PREVIEW_MAX_CELL_CHARS)
 
         return StoreSummary(
             table_name=name,
@@ -653,7 +887,7 @@ class DataFrameStore:
 
         try:
             statements = sqlglot.parse(stripped, dialect="sqlite")
-        except sqlglot.errors.ParseError as exc:
+        except SQLParseError as exc:
             raise ValueError(f"SQL parse error: {exc}") from exc
 
         # Filter out None entries that sqlglot may return for trailing
@@ -678,8 +912,9 @@ class DataFrameStore:
         for node in stmt.find_all(exp.Func):
             if isinstance(node, (exp.Anonymous, exp.AnonymousAggFunc)):
                 # Anonymous nodes are functions sqlglot doesn't recognise —
-                # block them since they may be dangerous extensions.
-                raise ValueError(f"Function not allowed: {node.name}")
+                # block them unless they are our own custom functions.
+                if node.name.lower() not in _CUSTOM_ANONYMOUS_FUNCTIONS:
+                    raise ValueError(f"Function not allowed: {node.name}")
             # Safety net: check SQL name against the explicit denylist
             # even if sqlglot gives them a typed Func subclass.
             try:

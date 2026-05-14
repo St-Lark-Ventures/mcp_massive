@@ -552,3 +552,132 @@ class TestExtractRecords:
         records = extract_records(data)
         assert len(records) == 3
         assert records[0] == {"value": "1"}
+
+    def test_single_record_with_nested_list_of_dicts_expands(self):
+        """Gainers/snapshot pattern: {"tickers": [{...}, ...]} becomes multiple rows."""
+        data = {
+            "tickers": [
+                {"ticker": "AAPL", "change": 5.2},
+                {"ticker": "MSFT", "change": 3.1},
+            ]
+        }
+        records = extract_records(data)
+        assert len(records) == 2
+        assert records[0]["ticker"] == "AAPL"
+        assert records[1]["ticker"] == "MSFT"
+
+    def test_single_record_with_nested_list_carries_parent_scalars(self):
+        """Indicator pattern: scalar fields from parent propagate to each row."""
+        data = {
+            "results": {
+                "underlying": {"url": "https://example.com/aggs"},
+                "values": [
+                    {"timestamp": 100, "value": 62.24},
+                    {"timestamp": 200, "value": 58.91},
+                ],
+            }
+        }
+        records = extract_records(data)
+        assert len(records) == 2
+        assert records[0]["timestamp"] == 100
+        assert records[0]["value"] == 62.24
+        assert records[0]["underlying_url"] == "https://example.com/aggs"
+        assert records[1]["underlying_url"] == "https://example.com/aggs"
+
+    def test_results_list_single_item_not_expanded(self):
+        """When results is a proper list with 1 item, nested lists stay stringified."""
+        data = {"results": [{"id": 1, "tags": [{"name": "a"}, {"name": "b"}]}]}
+        records = extract_records(data)
+        assert len(records) == 1
+        assert records[0]["id"] == 1
+        assert "a" in str(records[0]["tags"])
+
+    def test_plain_list_single_item_not_expanded(self):
+        """A plain list with 1 dict item should not expand nested lists."""
+        data = [{"id": 1, "items": [{"x": 10}, {"x": 20}]}]
+        records = extract_records(data)
+        assert len(records) == 1
+
+    def test_nested_expansion_with_empty_inner_list(self):
+        """Empty inner list should not trigger expansion."""
+        data = {"tickers": []}
+        records = extract_records(data)
+        assert len(records) == 1  # single record wrapping the empty dict
+
+    def test_multiple_list_of_dicts_keys_all_unpacked_with_source_tag(self):
+        """When a record has more than one list-of-dicts key, rows from
+        every list must be emitted (not just the first) and tagged with
+        a ``_source`` column so downstream can disambiguate overlapping
+        column names like ``date``."""
+        data = {
+            "dividends": [
+                {"date": "2025-01-15", "amount": 0.25},
+                {"date": "2025-04-15", "amount": 0.25},
+            ],
+            "splits": [
+                {"date": "2024-06-01", "ratio": 2},
+            ],
+        }
+        records = extract_records(data)
+        assert len(records) == 3
+        sources = [r["_source"] for r in records]
+        assert sources == ["dividends", "dividends", "splits"]
+        # Dividend fields on dividend rows
+        assert records[0]["amount"] == 0.25
+        assert records[1]["amount"] == 0.25
+        # Split fields on split row
+        assert records[2]["ratio"] == 2
+
+    def test_single_list_of_dicts_key_omits_source_tag(self):
+        """With only one list-of-dicts key, no ``_source`` column is
+        added — preserves existing single-list behavior."""
+        data = {"tickers": [{"ticker": "AAPL"}, {"ticker": "MSFT"}]}
+        records = extract_records(data)
+        assert len(records) == 2
+        assert "_source" not in records[0]
+        assert "_source" not in records[1]
+
+    def test_sibling_list_of_scalars_preserved_as_string(self):
+        """Sibling list-of-scalars values are stringified into parent_fields
+        rather than silently dropped."""
+        data = {
+            "ticker": "AAPL",
+            "tags": ["new", "featured"],
+            "values": [{"timestamp": 100, "value": 62.24}],
+        }
+        records = extract_records(data)
+        assert len(records) == 1
+        assert records[0]["ticker"] == "AAPL"
+        # tags list is stringified, not dropped
+        assert "new" in records[0]["tags"]
+        assert "featured" in records[0]["tags"]
+        assert records[0]["timestamp"] == 100
+
+    def test_multiple_lists_carry_scalar_parents_to_every_row(self):
+        """Scalar siblings propagate to rows from every list-of-dicts key."""
+        data = {
+            "ticker": "AAPL",
+            "as_of": "2025-01-15",
+            "dividends": [{"amount": 0.25}],
+            "splits": [{"ratio": 2}],
+        }
+        records = extract_records(data)
+        assert len(records) == 2
+        for r in records:
+            assert r["ticker"] == "AAPL"
+            assert r["as_of"] == "2025-01-15"
+
+    def test_mixed_empty_and_nonempty_list_of_dicts_siblings(self):
+        """Empty lists stringify into parent_fields (not chosen as a row
+        source); the non-empty list drives row expansion."""
+        data = {
+            "dividends": [],
+            "splits": [{"ratio": 2, "date": "2024-06-01"}],
+        }
+        records = extract_records(data)
+        assert len(records) == 1
+        assert records[0]["ratio"] == 2
+        # Empty list stringified, not dropped
+        assert "dividends" in records[0]
+        # Single-source path → no _source tag
+        assert "_source" not in records[0]

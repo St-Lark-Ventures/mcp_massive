@@ -1,91 +1,51 @@
 from unittest.mock import patch, MagicMock, AsyncMock
 
 import pytest
+from urllib.parse import urlparse
 
 from mcp_massive.index import (
     Endpoint,
     EndpointIndex,
+    QueryParam,
+    ResponseAttribute,
     parse_llms_txt,
-    extract_endpoint_pattern,
-    extract_path_prefix,
-    compress_doc,
+    parse_llms_full_txt,
+    parse_endpoint_section,
+    parse_query_params,
+    parse_response_attributes,
+    parse_table_rows,
     build_index,
-    _stem,
-    _tokenize,
-    _build_corpus_text,
-    _detect_category,
+    _detect_market,
+    _expand_query,
+    _path_prefix,
 )
-
-
-SAMPLE_LLMS_TXT = """\
-# Massive.com API
-
-> API documentation for Massive.com
-
-## Market Data
-
-- [Aggregates (Bars)](https://massive.com/docs/aggs): Get aggregate bars for a stock.
-- [Grouped Daily](https://massive.com/docs/grouped): Get grouped daily bars for the market.
-
-## Reference Data
-
-- [Tickers](https://massive.com/docs/tickers): Query all ticker symbols.
-"""
-
-SAMPLE_DOC_PAGE = """\
-# Aggregates (Bars)
-
-Get aggregate bars for a stock over a given date range.
-
-**Endpoint:** `GET /v2/aggs/ticker/{stocksTicker}/range/{multiplier}/{timespan}/{from}/{to}`
-
-## Query Parameters
-
-- adjusted (boolean, optional): Whether results are adjusted for splits.
-- sort (string, optional): Sort order of results. asc or desc.
-- limit (integer, optional): Limits number of results. Default 5000, max 50000.
-
-## Response Attributes
-
-- ticker (string): The exchange symbol.
-- adjusted (boolean): Whether results are adjusted.
-- results (array): Array of result objects.
-
-## Sample Response
-
-```json
-{
-  "ticker": "AAPL",
-  "results": [{"o": 130.28, "c": 129.04}]
-}
-```
-"""
-
-SAMPLE_DOC_NO_PARAMS = """\
-# Market Holidays
-
-**Endpoint:** `GET /v1/marketstatus/upcoming`
-"""
+from tests.integration.mock_llms_txt import (
+    aggs_section,
+    llms_partial_txt,
+    llms_txt,
+)
 
 
 class TestParseLlmsTxt:
     def test_parses_entries(self):
-        entries = parse_llms_txt(SAMPLE_LLMS_TXT)
-        assert len(entries) == 3
+        entries = parse_llms_txt(llms_txt())
+        assert len(entries) == 4
 
     def test_entry_fields(self):
-        entries = parse_llms_txt(SAMPLE_LLMS_TXT)
-        aggs = entries[0]
-        assert aggs["name"] == "Aggregates (Bars)"
-        assert aggs["url"] == "https://massive.com/docs/aggs"
-        assert aggs["description"] == "Get aggregate bars for a stock."
-        assert aggs["category"] == "Market Data"
+        entries = parse_llms_txt(llms_txt())
+        first = entries[0]
+        assert first["name"] == "Custom Bars (OHLC)"
+        parsed_url = urlparse(first["url"])
+        assert parsed_url.hostname == "massive.com"
+        assert "OHLC" in first["description"]
+        assert first["market"] == "Stocks"
 
-    def test_category_tracking(self):
-        entries = parse_llms_txt(SAMPLE_LLMS_TXT)
-        assert entries[0]["category"] == "Market Data"
-        assert entries[1]["category"] == "Market Data"
-        assert entries[2]["category"] == "Reference Data"
+    def test_market_tracking(self):
+        entries = parse_llms_txt(llms_txt())
+        assert entries[0]["market"] == "Stocks"
+        assert entries[1]["market"] == "Stocks"
+        assert entries[2]["market"] == "Stocks"
+        assert entries[3]["market"] == "Options"
 
     def test_empty_input(self):
         assert parse_llms_txt("") == []
@@ -94,250 +54,278 @@ class TestParseLlmsTxt:
         assert parse_llms_txt("# Just a title\n\nSome text.") == []
 
 
-class TestExtractEndpointPattern:
-    def test_standard_pattern(self):
-        result = extract_endpoint_pattern(SAMPLE_DOC_PAGE)
-        assert (
-            result
-            == "GET /v2/aggs/ticker/{stocksTicker}/range/{multiplier}/{timespan}/{from}/{to}"
-        )
+class TestParseEndpointSection:
+    def test_parses_standard_section(self):
+        ep = parse_endpoint_section(aggs_section())
+        assert ep is not None
+        assert ep.title == "Custom Bars (OHLC)"
+        assert "/v2/aggs/ticker/{stocksTicker}" in ep.path
+        assert ep.market == "Stocks"
 
-    def test_no_params_pattern(self):
-        result = extract_endpoint_pattern(SAMPLE_DOC_NO_PARAMS)
-        assert result == "GET /v1/marketstatus/upcoming"
+    def test_extracts_description(self):
+        ep = parse_endpoint_section(aggs_section())
+        assert ep is not None
+        assert "OHLC" in ep.description
 
-    def test_no_pattern_found(self):
-        result = extract_endpoint_pattern("No endpoint here.")
-        assert result == ""
+    def test_extracts_query_params(self):
+        ep = parse_endpoint_section(aggs_section())
+        assert ep is not None
+        assert len(ep.query_params) == 8
+        assert ep.query_params[0].name == "stocksTicker"
+        assert ep.query_params[0].type == "string"
+        assert ep.query_params[0].required is True
+        # Optional params too
+        param_names = {qp.name for qp in ep.query_params}
+        assert "adjusted" in param_names
+        assert "sort" in param_names
+        assert "limit" in param_names
+
+    def test_extracts_response_attributes(self):
+        ep = parse_endpoint_section(aggs_section())
+        assert ep is not None
+        assert len(ep.response_attributes) > 5
+        assert ep.response_attributes[0].name == "ticker"
+
+    def test_extracts_sample_response(self):
+        ep = parse_endpoint_section(aggs_section())
+        assert ep is not None
+        assert '"AAPL"' in ep.sample_response
+
+    def test_returns_none_without_endpoint(self):
+        assert parse_endpoint_section("No endpoint here.") is None
+
+    def test_no_params_section(self):
+        section = """\
+## Reference
+
+### Market Holidays
+
+**Endpoint:** `GET /v1/marketstatus/upcoming`
+"""
+        ep = parse_endpoint_section(section)
+        assert ep is not None
+        assert ep.title == "Market Holidays"
+        assert ep.market == "Reference"
+        assert ep.query_params == []
+        assert ep.response_attributes == []
 
 
-class TestExtractPathPrefix:
+class TestParseQueryParams:
+    def test_bullet_format(self):
+        section = """\
+## Query Parameters
+
+- adjusted (boolean, optional): Whether results are adjusted.
+- sort (string, required): Sort order.
+"""
+        params = parse_query_params(section)
+        assert len(params) == 2
+        assert params[0].name == "adjusted"
+        assert params[0].type == "boolean"
+        assert params[0].required is False
+        assert params[1].name == "sort"
+        assert params[1].required is True
+
+    def test_bold_bullet_format(self):
+        section = """\
+## Query Parameters
+
+- **adjusted** (boolean): Whether results are adjusted.
+"""
+        params = parse_query_params(section)
+        assert len(params) == 1
+        assert params[0].name == "adjusted"
+
+    def test_table_format(self):
+        section = """\
+## Query Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| adjusted | boolean | No | Whether results are adjusted. |
+| sort | string | Yes | Sort order. |
+"""
+        params = parse_query_params(section)
+        assert len(params) == 2
+        assert params[0].name == "adjusted"
+        assert params[0].required is False
+        assert params[1].name == "sort"
+        assert params[1].required is True
+
+    def test_no_section(self):
+        assert parse_query_params("No params here.") == []
+
+
+class TestParseResponseAttributes:
+    def test_bullet_format(self):
+        section = """\
+## Response Attributes
+
+- ticker (string): The exchange symbol.
+- adjusted (boolean): Whether results are adjusted.
+"""
+        attrs = parse_response_attributes(section)
+        assert len(attrs) == 2
+        assert attrs[0].name == "ticker"
+        assert attrs[0].type == "string"
+
+    def test_table_format(self):
+        section = """\
+## Response Attributes
+
+| Field | Type | Description |
+|-------|------|-------------|
+| ticker | string | The exchange symbol. |
+"""
+        attrs = parse_response_attributes(section)
+        assert len(attrs) == 1
+        assert attrs[0].name == "ticker"
+
+    def test_no_section(self):
+        assert parse_response_attributes("No attrs here.") == []
+
+
+class TestParseTableRows:
+    def test_basic_table(self):
+        text = """\
+## Query Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| adjusted | boolean | No | Whether adjusted. |
+"""
+        rows = parse_table_rows(text, "Query Parameters")
+        assert len(rows) == 1
+        assert rows[0]["parameter"] == "adjusted"
+
+    def test_no_table(self):
+        assert parse_table_rows("No table here.", "Query Parameters") == []
+
+
+class TestParseLlmsFullTxt:
+    def test_parses_entries(self):
+        entries = parse_llms_full_txt(llms_partial_txt())
+        assert len(entries) == 9
+
+    def test_entry_fields(self):
+        entries = parse_llms_full_txt(llms_partial_txt())
+        first = entries[0]
+        assert first.title == "Custom Bars (OHLC)"
+        assert first.market == "Crypto"
+        assert "/v2/aggs/ticker/" in first.path
+
+    def test_market_tracking(self):
+        entries = parse_llms_full_txt(llms_partial_txt())
+        markets = [e.market for e in entries]
+        assert "Crypto" in markets
+        assert "Forex" in markets
+        assert "Options" in markets
+        assert "Stocks" in markets
+
+    def test_description_extracted(self):
+        entries = parse_llms_full_txt(llms_partial_txt())
+        assert "OHLC" in entries[0].description
+
+    def test_empty_input(self):
+        assert parse_llms_full_txt("") == []
+
+    def test_no_entries(self):
+        assert parse_llms_full_txt("# Just a title\n\nSome text.") == []
+
+    def test_query_params_parsed(self):
+        entries = parse_llms_full_txt(llms_partial_txt())
+        assert len(entries[0].query_params) > 0
+        param_names = {qp.name for qp in entries[0].query_params}
+        assert "cryptoTicker" in param_names
+
+    def test_entries_independent(self):
+        """Each entry should only contain its own params."""
+        entries = parse_llms_full_txt(llms_partial_txt())
+        # First entry (Crypto) should not contain Stocks params
+        first_param_names = {qp.name for qp in entries[0].query_params}
+        assert "stocksTicker" not in first_param_names
+
+
+class TestPathPrefix:
     def test_path_with_params(self):
-        prefix = extract_path_prefix(
-            "GET /v2/aggs/ticker/{stocksTicker}/range/{multiplier}/{timespan}/{from}/{to}"
+        assert (
+            _path_prefix("/v2/aggs/ticker/{stocksTicker}/range/{multiplier}")
+            == "/v2/aggs/ticker/"
         )
-        assert prefix == "/v2/aggs/ticker/"
 
     def test_crypto_path(self):
-        prefix = extract_path_prefix("GET /v1/last/crypto/{from}/{to}")
-        assert prefix == "/v1/last/crypto/"
+        assert _path_prefix("/v1/last/crypto/{from}/{to}") == "/v1/last/crypto/"
 
     def test_no_params(self):
-        prefix = extract_path_prefix("GET /v3/reference/tickers")
-        assert prefix == "/v3/reference/tickers"
-
-    def test_no_method_prefix(self):
-        prefix = extract_path_prefix("/v2/aggs/ticker/{ticker}/prev")
-        assert prefix == "/v2/aggs/ticker/"
+        assert _path_prefix("/v3/reference/tickers") == "/v3/reference/tickers"
 
 
-class TestCompressDoc:
-    def test_retains_endpoint_pattern(self):
-        compressed = compress_doc(SAMPLE_DOC_PAGE)
-        assert "GET /v2/aggs/ticker/" in compressed
-
-    def test_retains_query_params(self):
-        compressed = compress_doc(SAMPLE_DOC_PAGE)
-        assert "adjusted" in compressed
-        assert "sort" in compressed
-        assert "limit" in compressed
-
-    def test_strips_response_attributes(self):
-        compressed = compress_doc(SAMPLE_DOC_PAGE)
-        # Response attribute fields should not be present
-        assert "Array of result objects" not in compressed
-
-    def test_strips_sample_response(self):
-        compressed = compress_doc(SAMPLE_DOC_PAGE)
-        assert "Sample Response" not in compressed
-        assert '"ticker": "AAPL"' not in compressed
-
-    def test_no_params_doc(self):
-        compressed = compress_doc(SAMPLE_DOC_NO_PARAMS)
-        assert "GET /v1/marketstatus/upcoming" in compressed
-
-
-class TestStem:
-    def test_exchange_consistency(self):
-        """Both 'exchange' and 'exchanges' should produce the same stem."""
-        assert _stem("exchange") == _stem("exchanges")
-
-    def test_aggregate_consistency(self):
-        """Both 'aggregate' and 'aggregates' should produce the same stem."""
-        assert _stem("aggregate") == _stem("aggregates")
-
-    def test_ticker_stems(self):
-        assert _stem("tickers") == _stem("ticker")
-
-    def test_trading_stem(self):
-        stem = _stem("trading")
-        assert stem == "trade"
-
-    def test_adjusted_stem(self):
-        stem = _stem("adjusted")
-        assert stem == "adjust"
-
-    def test_no_stem_short_words(self):
-        # Short words should still produce something
-        assert len(_stem("as")) > 0
-        assert len(_stem("is")) > 0
-
-    def test_no_stem_needed(self):
-        assert _stem("crypto") == "crypto"
-        assert _stem("forex") == "forex"
-
-
-class TestTokenize:
-    def test_basic_tokenization(self):
-        tokens = _tokenize("Hello World 123")
-        assert "hello" in tokens
-        assert "world" in tokens
-        assert "123" in tokens
-
-    def test_strips_punctuation(self):
-        tokens = _tokenize("stock. (bars) ticker,")
-        # stems may differ from old custom stemmer
-        assert any("stock" in t for t in tokens)
-        assert any("ticker" in t or "ticker" == t for t in tokens)
+class TestExpandQuery:
+    def test_basic_terms(self):
+        q = _expand_query("Hello World 123")
+        assert "hello" in q
+        assert "world" in q
+        assert "123" in q
 
     def test_alias_expansion(self):
-        tokens = _tokenize("agg candle fx")
-        assert "aggregate" in tokens  # alias for "agg"
-        assert "forex" in tokens  # alias for "fx"
+        q = _expand_query("agg candle fx")
+        assert "aggregate" in q  # alias for "agg" and "candle"
+        assert "forex" in q  # alias for "fx"
 
-    def test_alias_keeps_stemmed_original(self):
-        # "candle" should produce both "aggregate" (alias) and stemmed "candle"
-        tokens = _tokenize("candle")
-        assert "aggregate" in tokens
-        assert _stem("candle") in tokens
-
-    def test_stemming_in_tokenize(self):
-        tokens = _tokenize("tickers dividends")
-        assert _stem("tickers") in tokens
-        assert _stem("dividends") in tokens
-
-    def test_stopword_removal(self):
-        tokens = _tokenize("the stock is a good one")
-        assert "the" not in tokens
-        assert "is" not in tokens
-        assert "a" not in tokens
+    def test_alias_keeps_original(self):
+        q = _expand_query("candle")
+        assert "aggregate" in q
+        assert "candle" in q
 
     def test_list_alias_expansion(self):
         """'price' should expand to multiple aliases."""
-        tokens = _tokenize("price")
-        assert "trade" in tokens
-        assert "aggregate" in tokens
-        assert "snapshot" in tokens
+        q = _expand_query("price")
+        assert "trade" in q
+        assert "aggregate" in q
+        assert "snapshot" in q
 
+    def test_empty_query(self):
+        assert _expand_query("") == ""
 
-class TestBuildCorpusText:
-    def test_repeats_name_and_category(self):
-        ep = Endpoint(
-            name="SMA",
-            category="Stocks",
-            url="https://massive.com/docs/rest/stocks/sma",
-            description="Get SMA for a stock ticker.",
-            endpoint_pattern="GET /v1/indicators/sma/{stocksTicker}",
-            compressed_doc="...",
-            path_prefix="/v1/indicators/sma/",
-        )
-        text = _build_corpus_text(ep)
-        assert text.count("SMA") >= 3
-        assert text.count("Stocks") >= 2
+    def test_deduplicates(self):
+        """Repeated tokens should not produce duplicate terms."""
+        q = _expand_query("agg agg")
+        assert q.count("aggregate") == 1
 
-    def test_extracts_camel_case_params(self):
-        ep = Endpoint(
-            name="Aggregates",
-            category="Stocks",
-            url="https://massive.com/docs/rest/stocks/aggs",
-            description="Get aggs.",
-            endpoint_pattern="GET /v2/aggs/ticker/{stocksTicker}/range/{multiplier}/{timespan}/{from}/{to}",
-            compressed_doc="...",
-            path_prefix="/v2/aggs/ticker/",
-        )
-        text = _build_corpus_text(ep)
-        assert "stocks" in text.lower()
-        assert "ticker" in text.lower()
+    def test_underscore_terms_quoted(self):
+        """Alias values with underscores (e.g. bs_delta) should be quoted."""
+        q = _expand_query("delta")
+        assert '"bs_delta"' in q
+        assert "options" in q
 
-    def test_extracts_path_segments(self):
-        ep = Endpoint(
-            name="Aggregates",
-            category="Stocks",
-            url="https://massive.com/docs/rest/stocks/aggs",
-            description="Get aggs.",
-            endpoint_pattern="GET /v2/aggs/ticker/{stocksTicker}/range/{multiplier}/{timespan}/{from}/{to}",
-            compressed_doc="...",
-            path_prefix="/v2/aggs/ticker/",
-        )
-        text = _build_corpus_text(ep)
-        assert "aggs" in text
-        assert "ticker" in text
-        assert "range" in text
-
-    def test_extracts_doc_url_category(self):
-        ep = Endpoint(
-            name="SMA",
-            category="Stocks",
-            url="https://massive.com/docs/rest/stocks/sma",
-            description="Get SMA.",
-            endpoint_pattern="GET /v1/indicators/sma/{stocksTicker}",
-            compressed_doc="...",
-            path_prefix="/v1/indicators/sma/",
-        )
-        text = _build_corpus_text(ep)
-        # "stocks" from the doc URL
-        parts = text.split()
-        assert "stocks" in parts
-
-
-class TestDetectCategory:
-    def test_detects_stocks(self):
-        assert _detect_category("stock SMA") == "Stocks"
-
-    def test_detects_crypto(self):
-        assert _detect_category("crypto snapshot") == "Crypto"
-
-    def test_detects_forex(self):
-        assert _detect_category("forex rates") == "Forex"
-
-    def test_detects_options(self):
-        assert _detect_category("options chain") == "Options"
-
-    def test_no_category(self):
-        assert _detect_category("SMA") is None
-
-    def test_no_category_generic(self):
-        assert _detect_category("aggregate bars") is None
+    def test_or_joined(self):
+        """Terms should be joined with OR."""
+        q = _expand_query("stock trade")
+        assert " OR " in q
 
 
 class TestEndpointIndex:
     def _make_endpoints(self):
         return [
             Endpoint(
-                name="Aggregates (Bars)",
-                category="Market Data",
-                url="https://massive.com/docs/rest/stocks/aggs",
+                title="Aggregates (Bars)",
+                path="/v2/aggs/ticker/{stocksTicker}/range/{multiplier}/{timespan}/{from}/{to}",
+                market="Market Data",
                 description="Get aggregate bars for a stock.",
-                endpoint_pattern="GET /v2/aggs/ticker/{stocksTicker}/range/{multiplier}/{timespan}/{from}/{to}",
-                compressed_doc="GET /v2/aggs/...",
                 path_prefix="/v2/aggs/ticker/",
             ),
             Endpoint(
-                name="Tickers",
-                category="Reference Data",
-                url="https://massive.com/docs/rest/reference/tickers",
+                title="Tickers",
+                path="/v3/reference/tickers",
+                market="Reference Data",
                 description="Query all ticker symbols.",
-                endpoint_pattern="GET /v3/reference/tickers",
-                compressed_doc="GET /v3/reference/tickers",
                 path_prefix="/v3/reference/tickers",
             ),
             Endpoint(
-                name="Last Trade",
-                category="Market Data",
-                url="https://massive.com/docs/rest/stocks/last-trade",
+                title="Last Trade",
+                path="/v2/last/trade/{stocksTicker}",
+                market="Market Data",
                 description="Get the most recent trade for a ticker.",
-                endpoint_pattern="GET /v2/last/trade/{stocksTicker}",
-                compressed_doc="GET /v2/last/trade/...",
                 path_prefix="/v2/last/trade/",
             ),
         ]
@@ -346,7 +334,7 @@ class TestEndpointIndex:
         idx = EndpointIndex(self._make_endpoints())
         results = idx.search("aggregate bars stock")
         assert len(results) > 0
-        assert results[0].name == "Aggregates (Bars)"
+        assert results[0].title == "Aggregates (Bars)"
 
     def test_search_no_results(self):
         idx = EndpointIndex(self._make_endpoints())
@@ -371,50 +359,41 @@ class TestEndpointIndex:
         assert not idx.is_path_allowed("/v1/unknown/endpoint")
         assert not idx.is_path_allowed("/admin/secret")
 
-    def test_get_doc_found(self):
-        idx = EndpointIndex(self._make_endpoints())
-        doc = idx.get_doc("https://massive.com/docs/rest/stocks/aggs")
-        assert doc == "GET /v2/aggs/..."
-
-    def test_get_doc_not_found(self):
-        idx = EndpointIndex(self._make_endpoints())
-        assert idx.get_doc("https://massive.com/docs/nonexistent") is None
-
     def test_search_alias_agg(self):
         """'agg' should find Aggregates via alias expansion."""
         idx = EndpointIndex(self._make_endpoints())
         results = idx.search("agg")
-        assert any("Aggregates" in ep.name for ep in results)
+        assert any("Aggregates" in ep.title for ep in results)
 
     def test_search_alias_candle(self):
         """'candle' should find Aggregates via alias expansion."""
         idx = EndpointIndex(self._make_endpoints())
         results = idx.search("candle")
-        assert any("Aggregates" in ep.name for ep in results)
+        assert any("Aggregates" in ep.title for ep in results)
 
     def test_search_alias_ohlc(self):
         """'ohlc' should find Aggregates via alias expansion."""
         idx = EndpointIndex(self._make_endpoints())
         results = idx.search("ohlc data")
-        assert any("Aggregates" in ep.name for ep in results)
+        assert any("Aggregates" in ep.title for ep in results)
 
     def test_search_stemmed_plural(self):
         """'tickers' (plural) should still match 'Tickers' endpoint."""
         idx = EndpointIndex(self._make_endpoints())
         results = idx.search("tickers")
-        assert any("Tickers" in ep.name for ep in results)
+        assert any("Tickers" in ep.title for ep in results)
 
     def test_search_alias_symbol(self):
         """'symbol' should find Tickers via alias expansion."""
         idx = EndpointIndex(self._make_endpoints())
         results = idx.search("symbol lookup")
-        assert any("Tickers" in ep.name for ep in results)
+        assert any("Tickers" in ep.title for ep in results)
 
     def test_search_alias_transaction(self):
         """'transaction' should find Last Trade via alias expansion."""
         idx = EndpointIndex(self._make_endpoints())
         results = idx.search("last transaction")
-        assert any("Trade" in ep.name for ep in results)
+        assert any("Trade" in ep.title for ep in results)
 
 
 class TestCrossAssetClassRanking:
@@ -423,48 +402,38 @@ class TestCrossAssetClassRanking:
     def _make_cross_asset_endpoints(self):
         return [
             Endpoint(
-                name="SMA",
-                category="Stocks",
-                url="https://massive.com/docs/rest/stocks/sma",
+                title="SMA",
+                path="/v1/indicators/sma/{stocksTicker}",
+                market="Stocks",
                 description="Get SMA for a stock ticker.",
-                endpoint_pattern="GET /v1/indicators/sma/{stocksTicker}",
-                compressed_doc="...",
                 path_prefix="/v1/indicators/sma/",
             ),
             Endpoint(
-                name="SMA",
-                category="Crypto",
-                url="https://massive.com/docs/rest/crypto/sma",
+                title="SMA",
+                path="/v1/indicators/sma/{cryptoTicker}",
+                market="Crypto",
                 description="Get SMA for a crypto ticker.",
-                endpoint_pattern="GET /v1/indicators/sma/{cryptoTicker}",
-                compressed_doc="...",
                 path_prefix="/v1/indicators/sma/",
             ),
             Endpoint(
-                name="SMA",
-                category="Forex",
-                url="https://massive.com/docs/rest/forex/sma",
+                title="SMA",
+                path="/v1/indicators/sma/{forexTicker}",
+                market="Forex",
                 description="Get SMA for a forex ticker.",
-                endpoint_pattern="GET /v1/indicators/sma/{forexTicker}",
-                compressed_doc="...",
                 path_prefix="/v1/indicators/sma/",
             ),
             Endpoint(
-                name="Unified Snapshot",
-                category="Stocks",
-                url="https://massive.com/docs/rest/stocks/snapshot",
+                title="Unified Snapshot",
+                path="/v3/snapshot/{stocksTicker}",
+                market="Stocks",
                 description="Get unified snapshot for a stock ticker.",
-                endpoint_pattern="GET /v3/snapshot/{stocksTicker}",
-                compressed_doc="...",
                 path_prefix="/v3/snapshot/",
             ),
             Endpoint(
-                name="Unified Snapshot",
-                category="Crypto",
-                url="https://massive.com/docs/rest/crypto/snapshot",
+                title="Unified Snapshot",
+                path="/v3/snapshot/{cryptoTicker}",
+                market="Crypto",
                 description="Get unified snapshot for a crypto ticker.",
-                endpoint_pattern="GET /v3/snapshot/{cryptoTicker}",
-                compressed_doc="...",
                 path_prefix="/v3/snapshot/",
             ),
         ]
@@ -474,86 +443,137 @@ class TestCrossAssetClassRanking:
         idx = EndpointIndex(self._make_cross_asset_endpoints())
         results = idx.search("stock SMA")
         assert len(results) > 0
-        assert results[0].category == "Stocks"
-        assert results[0].name == "SMA"
+        assert results[0].market == "Stocks"
+        assert results[0].title == "SMA"
 
     def test_crypto_snapshot_ranks_first(self):
         """'crypto snapshot' should rank Crypto snapshot above Stocks snapshot."""
         idx = EndpointIndex(self._make_cross_asset_endpoints())
         results = idx.search("crypto snapshot")
         # Find the first snapshot result
-        snapshot_results = [ep for ep in results if "Snapshot" in ep.name]
+        snapshot_results = [ep for ep in results if "Snapshot" in ep.title]
         assert len(snapshot_results) > 0
-        assert snapshot_results[0].category == "Crypto"
+        assert snapshot_results[0].market == "Crypto"
 
-    def test_generic_sma_returns_multiple_categories(self):
-        """Generic 'SMA' (no asset class) should return results from multiple categories."""
+    def test_generic_sma_deduplicates_across_markets(self):
+        """Generic 'SMA' (no asset class) should return one SMA result (deduped by title)."""
         idx = EndpointIndex(self._make_cross_asset_endpoints())
         results = idx.search("SMA")
-        categories = {ep.category for ep in results if ep.name == "SMA"}
-        assert len(categories) >= 2
+        sma_results = [ep for ep in results if ep.title == "SMA"]
+        assert len(sma_results) == 1
+
+    def test_stock_candlesticks_ranks_stocks_bars_first(self):
+        """'stock candlesticks' should rank Stocks OHLC bars above other markets."""
+        endpoints = [
+            Endpoint(
+                title="Merchant Aggregates",
+                path="/consumer-spending/eu/v1/merchant-aggregates",
+                market="Alternative",
+                description="Aggregated European consumer spending data.",
+                path_prefix="/consumer-spending/eu/v1/merchant-aggregates",
+            ),
+            Endpoint(
+                title="Aggregate Bars (OHLC)",
+                path="/futures/vX/aggs/{ticker}",
+                market="Futures",
+                description="Retrieve aggregated OHLC and volume data for futures.",
+                path_prefix="/futures/vX/aggs/",
+            ),
+            Endpoint(
+                title="Custom Bars (OHLC)",
+                path="/v2/aggs/ticker/{stocksTicker}/range/{multiplier}/{timespan}/{from}/{to}",
+                market="Stocks",
+                description="Retrieve aggregated OHLC and volume data for a stock.",
+                path_prefix="/v2/aggs/ticker/",
+            ),
+            Endpoint(
+                title="Custom Bars (OHLC)",
+                path="/v2/aggs/ticker/{forexTicker}/range/{multiplier}/{timespan}/{from}/{to}",
+                market="Forex",
+                description="Retrieve aggregated OHLC and volume data for forex.",
+                path_prefix="/v2/aggs/ticker/",
+            ),
+        ]
+        idx = EndpointIndex(endpoints)
+        results = idx.search("stock candlesticks")
+        assert len(results) > 0
+        assert results[0].market == "Stocks"
+        assert "Bars" in results[0].title or "OHLC" in results[0].title
 
 
 class TestFinanceAliases:
-    """Test that finance-related aliases expand correctly."""
+    """Test that finance-related aliases expand correctly via _expand_query."""
 
     def test_delta_alias(self):
-        tokens = _tokenize("delta")
-        assert "bs_delta" in tokens
-        assert "options" in tokens
+        q = _expand_query("delta")
+        assert "bs_delta" in q
+        assert "options" in q
 
     def test_gamma_alias(self):
-        tokens = _tokenize("gamma")
-        assert "bs_gamma" in tokens
+        q = _expand_query("gamma")
+        assert "bs_gamma" in q
 
     def test_theta_alias(self):
-        tokens = _tokenize("theta")
-        assert "bs_theta" in tokens
+        q = _expand_query("theta")
+        assert "bs_theta" in q
 
     def test_vega_alias(self):
-        tokens = _tokenize("vega")
-        assert "bs_vega" in tokens
+        q = _expand_query("vega")
+        assert "bs_vega" in q
 
     def test_rho_alias(self):
-        tokens = _tokenize("rho")
-        assert "bs_rho" in tokens
+        q = _expand_query("rho")
+        assert "bs_rho" in q
+
+    def test_vanna_alias(self):
+        q = _expand_query("vanna")
+        assert "bs_vanna" in q
+        assert "options" in q
+
+    def test_volga_alias(self):
+        q = _expand_query("volga")
+        assert "bs_volga" in q
+        assert "options" in q
+
+    def test_vomma_alias(self):
+        q = _expand_query("vomma")
+        assert "bs_volga" in q
+
+    def test_charm_alias(self):
+        q = _expand_query("charm")
+        assert "bs_charm" in q
+        assert "options" in q
+
+    def test_veta_alias(self):
+        q = _expand_query("veta")
+        assert "bs_veta" in q
+        assert "options" in q
+
+    def test_color_alias(self):
+        q = _expand_query("color")
+        assert "bs_color" in q
+        assert "options" in q
 
     def test_blackscholes_alias(self):
-        tokens = _tokenize("blackscholes")
-        assert "bs_price" in tokens
-        assert "bs_delta" in tokens
+        q = _expand_query("blackscholes")
+        assert "bs_price" in q
+        assert "bs_delta" in q
 
     def test_greek_alias(self):
-        tokens = _tokenize("greek")
-        assert "greeks" in tokens
+        q = _expand_query("greek")
+        assert "greeks" in q
 
     def test_technical_alias(self):
-        tokens = _tokenize("technical")
-        assert "aggregate" in tokens
+        q = _expand_query("technical")
+        assert "aggregate" in q
 
     def test_indicator_alias(self):
-        tokens = _tokenize("indicator")
-        assert "aggregate" in tokens
+        q = _expand_query("indicator")
+        assert "aggregate" in q
 
     def test_moving_alias(self):
-        tokens = _tokenize("moving")
-        assert "aggregate" in tokens
-
-
-class TestStemmerConsistency:
-    """Test that the Snowball stemmer fixes the old custom stemmer's inconsistencies."""
-
-    def test_exchange_exchanges_same_stem(self):
-        assert _stem("exchange") == _stem("exchanges")
-
-    def test_aggregate_aggregates_same_stem(self):
-        assert _stem("aggregate") == _stem("aggregates")
-
-    def test_dividend_dividends_same_stem(self):
-        assert _stem("dividend") == _stem("dividends")
-
-    def test_ticker_tickers_same_stem(self):
-        assert _stem("ticker") == _stem("tickers")
+        q = _expand_query("moving")
+        assert "aggregate" in q
 
 
 class TestDeprecatedFilter:
@@ -567,34 +587,46 @@ class TestDeprecatedFilter:
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
 
-        llms_txt = """\
-# API
-
+        deprecated_txt = """\
 ## Stocks
 
-- [Aggregates (Bars)](https://massive.com/docs/aggs): Get aggs.
-- [Aggregates (Bars) (Deprecated)](https://massive.com/docs/aggs-old): Old aggs.
+### Aggregates (Bars)
+
+**Endpoint:** `GET /v2/aggs/ticker/{stocksTicker}/range/{multiplier}/{timespan}/{from}/{to}`
+
+**Description:**
+
+Get aggregate bars.
+
+## Query Parameters
+
+- adjusted (boolean, optional): Whether results are adjusted for splits.
+---
+## Stocks
+
+### Aggregates (Bars) (Deprecated)
+
+**Endpoint:** `GET /v1/aggs/ticker/{stocksTicker}/range/{multiplier}/{timespan}/{from}/{to}`
+
+**Description:**
+
+Old aggregate bars.
+
+## Query Parameters
+
+- adjusted (boolean, optional): Whether results are adjusted for splits.
 """
-        llms_response = MagicMock()
-        llms_response.text = llms_txt
-        llms_response.raise_for_status = MagicMock()
+        response = MagicMock()
+        response.text = deprecated_txt
+        response.raise_for_status = MagicMock()
 
-        doc_response = MagicMock()
-        doc_response.text = SAMPLE_DOC_PAGE
-        doc_response.raise_for_status = MagicMock()
-
-        async def get_side_effect(url, **kwargs):
-            if url == "https://massive.com/docs/rest/llms.txt":
-                return llms_response
-            return doc_response
-
-        mock_client.get = AsyncMock(side_effect=get_side_effect)
+        mock_client.get = AsyncMock(return_value=response)
 
         idx = await build_index()
         # Only the non-deprecated endpoint should be indexed
         results = idx.search("aggregates")
         for ep in results:
-            assert "(Deprecated)" not in ep.name
+            assert "(Deprecated)" not in ep.title
 
 
 class TestBuildIndex:
@@ -606,29 +638,17 @@ class TestBuildIndex:
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
 
-        # Mock llms.txt response
-        llms_response = MagicMock()
-        llms_response.text = SAMPLE_LLMS_TXT
-        llms_response.raise_for_status = MagicMock()
-
-        # Mock doc page responses
-        doc_response = MagicMock()
-        doc_response.text = SAMPLE_DOC_PAGE
-        doc_response.raise_for_status = MagicMock()
-
-        async def get_side_effect(url, **kwargs):
-            if url == "https://massive.com/docs/rest/llms.txt":
-                return llms_response
-            return doc_response
-
-        mock_client.get = AsyncMock(side_effect=get_side_effect)
+        response = MagicMock()
+        response.text = llms_partial_txt()
+        response.raise_for_status = MagicMock()
+        mock_client.get = AsyncMock(return_value=response)
 
         idx = await build_index()
         assert isinstance(idx, EndpointIndex)
 
     @pytest.mark.asyncio
     @patch("mcp_massive.index.httpx.AsyncClient")
-    async def test_build_index_llms_txt_failure(self, mock_client_class):
+    async def test_build_index_fetch_failure(self, mock_client_class):
         mock_client = AsyncMock()
         mock_client_class.return_value = mock_client
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -642,43 +662,6 @@ class TestBuildIndex:
 
     @pytest.mark.asyncio
     @patch("mcp_massive.index.httpx.AsyncClient")
-    async def test_build_index_partial_doc_failures(self, mock_client_class):
-        """Index should still work when some doc pages fail to fetch."""
-        mock_client = AsyncMock()
-        mock_client_class.return_value = mock_client
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-
-        llms_response = MagicMock()
-        llms_response.text = SAMPLE_LLMS_TXT
-        llms_response.raise_for_status = MagicMock()
-
-        doc_response = MagicMock()
-        doc_response.text = SAMPLE_DOC_PAGE
-        doc_response.raise_for_status = MagicMock()
-
-        call_count = 0
-
-        async def get_side_effect(url, **kwargs):
-            nonlocal call_count
-            call_count += 1
-            if url == "https://massive.com/docs/rest/llms.txt":
-                return llms_response
-            # Fail every other doc page
-            if call_count % 2 == 0:
-                raise Exception("Simulated doc fetch failure")
-            return doc_response
-
-        mock_client.get = AsyncMock(side_effect=get_side_effect)
-
-        idx = await build_index()
-        assert isinstance(idx, EndpointIndex)
-        # Should have at least one endpoint (the one that didn't fail)
-        results = idx.search("aggregates")
-        assert len(results) >= 0  # May or may not match depending on which page failed
-
-    @pytest.mark.asyncio
-    @patch("mcp_massive.index.httpx.AsyncClient")
     async def test_build_index_explicit_url(self, mock_client_class):
         """build_index(llms_txt_url=...) should use the provided URL."""
         mock_client = AsyncMock()
@@ -686,28 +669,596 @@ class TestBuildIndex:
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
 
-        llms_response = MagicMock()
-        llms_response.text = SAMPLE_LLMS_TXT
-        llms_response.raise_for_status = MagicMock()
+        response = MagicMock()
+        response.text = llms_partial_txt()
+        response.raise_for_status = MagicMock()
 
-        doc_response = MagicMock()
-        doc_response.text = SAMPLE_DOC_PAGE
-        doc_response.raise_for_status = MagicMock()
-
-        custom_url = "https://custom-server.example.com/llms.txt"
-
-        async def get_side_effect(url, **kwargs):
-            if url == custom_url:
-                return llms_response
-            if "massive.com/docs/rest/llms.txt" in url:
-                # Default URL should NOT be called
-                raise AssertionError(f"Default URL was called: {url}")
-            return doc_response
-
-        mock_client.get = AsyncMock(side_effect=get_side_effect)
+        custom_url = "https://custom-server.example.com/llms-full.txt"
+        mock_client.get = AsyncMock(return_value=response)
 
         idx = await build_index(llms_txt_url=custom_url)
         assert isinstance(idx, EndpointIndex)
-        # Verify the custom URL was the first get call
+        # Verify the custom URL was the only get call
         first_call_url = mock_client.get.call_args_list[0].args[0]
         assert first_call_url == custom_url
+        # Should be exactly one fetch (no individual doc page fetches)
+        assert mock_client.get.call_count == 1
+
+
+class TestLlmsFullTxtE2E:
+    """End-to-end test that fetches the real llms-full.txt from massive.com.
+
+    This catches breaking changes in the upstream document format.
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.e2e
+    async def test_fetch_and_parse_real_llms_full_txt(self):
+        """Fetch the real llms-full.txt and verify it parses into valid endpoints."""
+        import httpx
+        import ssl
+        import certifi
+
+        url = "https://massive.com/docs/rest/llms-full.txt"
+        ssl_ctx = ssl.create_default_context(cafile=certifi.where())
+        async with httpx.AsyncClient(timeout=30.0, verify=ssl_ctx) as client:
+            resp = await client.get(url, follow_redirects=True)
+            resp.raise_for_status()
+            text = resp.text
+
+        entries = parse_llms_full_txt(text)
+
+        # Should have a substantial number of endpoints
+        assert len(entries) > 40, f"Expected 40+ endpoints, got {len(entries)}"
+
+        # Every entry must have required fields
+        for entry in entries:
+            assert entry.title, f"Entry missing title: {entry}"
+            assert entry.market, f"Entry missing market: {entry}"
+            assert entry.path, f"Entry missing path: {entry.title}"
+
+        # Most entries should have an endpoint path
+        paths_found = sum(1 for e in entries if e.path)
+        assert paths_found > 40, f"Expected 40+ entries with paths, got {paths_found}"
+
+    @pytest.mark.asyncio
+    @pytest.mark.e2e
+    async def test_build_index_from_real_llms_full_txt(self):
+        """Build a full index from the real llms-full.txt and verify search works."""
+        idx = await build_index(
+            llms_txt_url="https://massive.com/docs/rest/llms-full.txt"
+        )
+
+        # Should have indexed many endpoints
+        assert len(idx._endpoints) > 40
+
+        # Basic search should return results
+        results = idx.search("stock aggregate bars")
+        assert len(results) > 0
+        # Real endpoint titles use "Bars (OHLC)" naming.  Accept any
+        # aggregates-family marker.
+        assert any(
+            marker in ep.title.lower()
+            for ep in results
+            for marker in ("aggregate", "bars", "ohlc")
+        )
+
+        # Market detection should work
+        results = idx.search("crypto snapshot")
+        assert len(results) > 0
+
+
+class TestMarketFilter:
+    def _endpoints(self):
+        return [
+            Endpoint(
+                title="SMA",
+                path="/v1/indicators/sma/{stocksTicker}",
+                market="Stocks",
+                description="Simple moving average for a stock ticker.",
+                path_prefix="/v1/indicators/sma/",
+            ),
+            Endpoint(
+                title="SMA",
+                path="/v1/indicators/sma/{cryptoTicker}",
+                market="Crypto",
+                description="Simple moving average for a crypto ticker.",
+                path_prefix="/v1/indicators/sma/",
+            ),
+            Endpoint(
+                title="Splits",
+                path="/stocks/v1/splits",
+                market="Stocks",
+                description="Stock split history.",
+                path_prefix="/stocks/v1/splits",
+            ),
+            Endpoint(
+                title="Unified Snapshot",
+                path="/v3/snapshot",
+                market="Stocks",
+                description="Unified snapshot across assets.",
+                path_prefix="/v3/snapshot",
+            ),
+        ]
+
+    def test_explicit_market_is_strict(self):
+        """Explicit market filter excludes all other-market rows."""
+        idx = EndpointIndex(self._endpoints())
+        results = idx.search("sma", market="Crypto")
+        assert all(ep.market == "Crypto" for ep in results)
+        assert results[0].title == "SMA"
+
+    def test_explicit_market_with_zero_matches_returns_empty(self):
+        """Strict mode: no fallback when explicit filter matches nothing."""
+        idx = EndpointIndex(self._endpoints())
+        results = idx.search("sma", market="Forex")
+        assert results == []
+
+    def test_inferred_market_prefers_matching_market(self):
+        """When market is inferred, the matching-market row ranks above
+        a same-titled row from a different market."""
+        idx = EndpointIndex(self._endpoints())
+        results = idx.search("crypto sma")
+        assert results[0].market == "Crypto"
+        assert results[0].title == "SMA"
+
+    def test_empty_endpoints_returns_empty(self):
+        """Regression guard: search over an empty index returns []."""
+        idx = EndpointIndex([])
+        assert idx.search("anything") == []
+        assert idx.search("anything", market="Crypto") == []
+
+    def test_empty_query_returns_empty(self):
+        """A query that tokenizes to nothing short-circuits before FTS."""
+        idx = EndpointIndex(self._endpoints())
+        assert idx.search("") == []
+        assert idx.search("!!!") == []  # only punctuation → no tokens
+
+
+class TestDetectMarket:
+    """Direct coverage for ``_detect_market`` precedence rules."""
+
+    def test_explicit_asset_class_keyword(self):
+        assert _detect_market("forex EUR/USD") == "Forex"
+        assert _detect_market("bitcoin price") == "Crypto"
+        assert _detect_market("call option strike") == "Options"
+
+    def test_specific_market_wins_over_stocks_when_both_match(self):
+        """``gainers/losers/movers`` are mapped to Stocks as defaults,
+        but an explicit Crypto/Forex/etc. keyword in the same query
+        must still win — otherwise "crypto gainers" routes to Stocks."""
+        assert _detect_market("crypto gainers") == "Crypto"
+        assert _detect_market("forex gainers") == "Forex"
+        assert _detect_market("biggest crypto movers") == "Crypto"
+        assert _detect_market("crypto losers today") == "Crypto"
+        assert _detect_market("fx top movers") == "Forex"
+
+    def test_stocks_keywords_alone_still_route_to_stocks(self):
+        """The default-to-Stocks path for casual gainers/losers/movers
+        queries must still work when no other market is mentioned."""
+        assert _detect_market("today's biggest gainers") == "Stocks"
+        assert _detect_market("biggest movers") == "Stocks"
+        assert _detect_market("top losers") == "Stocks"
+
+    def test_uppercase_ticker_fallback(self):
+        """Uppercase 2-5 letter token that isn't a known acronym
+        infers Stocks, even with no asset-class keyword."""
+        assert _detect_market("RSI for AAPL") == "Stocks"
+        assert _detect_market("trades for GOOG") == "Stocks"
+
+    def test_no_signal_returns_none(self):
+        assert _detect_market("documentation") is None
+        assert _detect_market("what does this do") is None
+
+
+class TestInferredMarketBoost:
+    """Inferred-market preference is a *soft* boost, not a filter:
+
+    1. The ``market`` column is indexed, so its literal value ("Stocks",
+       "Crypto", …) contributes to BM25 whenever the query contains a
+       matching token like "stock" or "crypto".
+    2. When a market is also *detected* from the query via
+       :func:`_detect_market`, we apply a multiplicative
+       :attr:`EndpointIndex._MARKET_BOOST` to all rows whose market
+       matches.
+
+    The combination shifts ranking toward the inferred market but does
+    not hide strong cross-market matches.
+    """
+
+    def _endpoints(self):
+        return [
+            Endpoint(
+                title="Aggregates Stocks",
+                path="/v2/aggs/ticker/{stocksTicker}",
+                market="Stocks",
+                description="Aggregate bars for a stock.",
+                path_prefix="/v2/aggs/ticker/",
+            ),
+            Endpoint(
+                title="Aggregates Crypto",
+                path="/v2/aggs/ticker/{cryptoTicker}",
+                market="Crypto",
+                description="Aggregate bars for crypto.",
+                path_prefix="/v2/aggs/ticker/",
+            ),
+        ]
+
+    def test_cross_market_rows_still_surface(self):
+        """A generic query without a market keyword returns rows from
+        multiple markets — the boost only kicks in when a market is
+        detected, so without one both Stocks and Crypto rows appear."""
+        idx = EndpointIndex(self._endpoints())
+        results = idx.search("aggregates", top_k=5)
+        markets = {ep.market for ep in results}
+        assert "Stocks" in markets
+        assert "Crypto" in markets
+
+    def test_explicit_filter_is_strict(self):
+        """Explicit market filters do NOT apply the boost; only matching
+        rows are returned even when other markets score higher."""
+        idx = EndpointIndex(self._endpoints())
+        results = idx.search("aggregates", market="Stocks", top_k=5)
+        assert all(ep.market == "Stocks" for ep in results)
+
+    def test_unknown_market_endpoint_still_findable(self):
+        """Endpoints whose market matches no detection keywords still
+        surface — we never exclude rows based on inferred market."""
+        endpoints = [
+            Endpoint(
+                title="Mystery Endpoint",
+                path="/some/new/path",
+                market="Partners",
+                description="A novel endpoint under a partner namespace.",
+                path_prefix="/some/new/path",
+            ),
+        ]
+        idx = EndpointIndex(endpoints)
+        results = idx.search("mystery")
+        assert len(results) == 1
+        assert results[0].title == "Mystery Endpoint"
+
+    def test_inferred_market_outranks_other_markets(self):
+        """When the query contains an inferred-market keyword, rows of
+        that market rank above other-market rows."""
+        endpoints = [
+            Endpoint(
+                title="Crypto Aggregates",
+                path="/v2/aggs/ticker/{cryptoTicker}",
+                market="Crypto",
+                description="Aggregate bars for crypto.",
+                path_prefix="/v2/aggs/ticker/",
+            ),
+            Endpoint(
+                title="Crypto Snapshot",
+                path="/v2/snapshot/crypto",
+                market="Crypto",
+                description="Crypto snapshot.",
+                path_prefix="/v2/snapshot/crypto",
+            ),
+            Endpoint(
+                title="Stocks Aggregates",
+                path="/v2/aggs/ticker/{stocksTicker}",
+                market="Stocks",
+                description="Aggregate bars for a stock.",
+                path_prefix="/v2/aggs/ticker/",
+            ),
+        ]
+        idx = EndpointIndex(endpoints)
+        results = idx.search("crypto", top_k=5)
+        crypto_ranks = [i for i, ep in enumerate(results) if ep.market == "Crypto"]
+        stocks_ranks = [i for i, ep in enumerate(results) if ep.market == "Stocks"]
+        assert crypto_ranks, "expected at least one Crypto result"
+        if stocks_ranks:
+            assert max(crypto_ranks) < min(stocks_ranks), (
+                "Crypto rows should all rank above Stocks rows under "
+                "inferred Crypto market: "
+                f"{[(ep.title, ep.market) for ep in results]}"
+            )
+
+    def test_cross_market_title_match_beats_inferred_boost(self):
+        """The boost must not be so large that a weak in-market match
+        outranks a strong cross-market title match.
+
+        Real-world case: "stock ratings" infers Stocks but the right
+        endpoint is Analyst Ratings under Partners — its title match
+        should outweigh the 2x boost any generic Stocks row gets.
+        """
+        endpoints = [
+            Endpoint(
+                title="Splits",
+                path="/stocks/v1/splits",
+                market="Stocks",
+                description="Stock split history.",
+                path_prefix="/stocks/v1/splits",
+            ),
+            Endpoint(
+                title="Trades",
+                path="/v3/trades/{stockTicker}",
+                market="Stocks",
+                description="Historical trades for a stock.",
+                path_prefix="/v3/trades/",
+            ),
+            Endpoint(
+                title="Analyst Ratings",
+                path="/benzinga/v1/ratings",
+                market="Partners",
+                description="Historical analyst ratings and price targets.",
+                path_prefix="/benzinga/v1/ratings",
+            ),
+        ]
+        idx = EndpointIndex(endpoints)
+        results = idx.search("stock ratings", top_k=3)
+        # Partners-market Analyst Ratings should win despite the
+        # inferred-Stocks boost applied to the other two rows.
+        assert results[0].title == "Analyst Ratings"
+        assert results[0].market == "Partners"
+
+
+class TestAttrsColumn:
+    """The ``attrs`` FTS column indexes response-attribute field names
+    (e.g. ``debt_to_equity``, ``yield_10_year``) so queries for those
+    jargon terms surface the right endpoint without hand-curated
+    aliases.  Attrs is weighted well below title/description so it
+    only influences ranking for otherwise-weak matches.
+    """
+
+    def test_response_attr_names_are_indexed(self):
+        """A query matching only a response-attribute field name still
+        finds the endpoint that owns that field."""
+        endpoints = [
+            Endpoint(
+                title="Ratios",
+                path="/stocks/financials/v1/ratios",
+                market="Stocks",
+                description="Key financial ratios for a company.",
+                response_attributes=[
+                    ResponseAttribute(
+                        name="results[].debt_to_equity",
+                        type="number",
+                        description="Debt-to-equity ratio.",
+                    ),
+                    ResponseAttribute(
+                        name="results[].return_on_equity",
+                        type="number",
+                        description="Return on equity.",
+                    ),
+                ],
+                path_prefix="/stocks/financials/v1/ratios",
+            ),
+            Endpoint(
+                title="Last Trade",
+                path="/v2/last/trade/{stocksTicker}",
+                market="Stocks",
+                description="Most recent stock trade.",
+                path_prefix="/v2/last/trade/",
+            ),
+        ]
+        idx = EndpointIndex(endpoints)
+        # "debt_to_equity" appears only in the Ratios endpoint's
+        # response attrs — it should rank Ratios first.
+        results = idx.search("debt to equity", top_k=2)
+        assert results[0].title == "Ratios"
+
+    def test_results_prefix_stripped_from_attrs(self):
+        """The common ``results[].`` / ``results.`` wrapper is stripped
+        so searches don't need to include it."""
+        endpoints = [
+            Endpoint(
+                title="Treasury Yields",
+                path="/fed/v1/treasury-yields",
+                market="Economy",
+                description="U.S. Treasury yield data.",
+                response_attributes=[
+                    ResponseAttribute(
+                        name="results[].yield_10_year",
+                        type="number",
+                        description="",
+                    ),
+                    ResponseAttribute(
+                        name="results[].yield_2_year",
+                        type="number",
+                        description="",
+                    ),
+                ],
+                path_prefix="/fed/v1/treasury-yields",
+            ),
+        ]
+        idx = EndpointIndex(endpoints)
+        # Plain "yield" should find this endpoint via the stripped attrs.
+        results = idx.search("10 year yield")
+        assert results and results[0].title == "Treasury Yields"
+
+    def test_query_params_not_indexed_in_attrs(self):
+        """Query params are NOT added to ``attrs`` — they're dominated
+        by generic filter operators (``ticker``, ``date``, ``limit``,
+        ``sort``) that appear on nearly every endpoint."""
+        endpoints = [
+            Endpoint(
+                title="Trades",
+                path="/v3/trades/{ticker}",
+                market="Stocks",
+                description="Historical trades.",
+                query_params=[
+                    QueryParam(
+                        name="limit",
+                        type="integer",
+                        required=False,
+                        description="",
+                    ),
+                ],
+                path_prefix="/v3/trades/",
+            ),
+            Endpoint(
+                title="Quotes",
+                path="/v3/quotes/{ticker}",
+                market="Stocks",
+                description="Historical quotes.",
+                query_params=[
+                    QueryParam(
+                        name="limit",
+                        type="integer",
+                        required=False,
+                        description="",
+                    ),
+                ],
+                path_prefix="/v3/quotes/",
+            ),
+        ]
+        idx = EndpointIndex(endpoints)
+        # If "limit" were in attrs, this query would match both
+        # endpoints via the attrs column.  We expect no matches.
+        results = idx.search("limit")
+        assert results == []
+
+
+class TestFormatTokenEconomy:
+    """Format-time output should drop content that wastes LLM tokens
+    without contributing to endpoint selection."""
+
+    def test_use_cases_trailer_stripped(self):
+        """The trailing ``Use Cases: ...`` marketing sentence is human
+        copy and should not appear in formatted output."""
+        ep = Endpoint(
+            title="Demo",
+            path="/v1/demo",
+            market="Stocks",
+            description=(
+                "Retrieve demo data with rich detail.\n\n"
+                "Use Cases: portfolio analysis, risk modeling, dashboards."
+            ),
+            path_prefix="/v1/demo",
+        )
+        out = ep.format("default")
+        assert "demo data" in out
+        assert "Use Cases" not in out
+        assert "portfolio analysis" not in out
+
+    def test_use_cases_preserved_in_fts_index(self):
+        """We strip ``Use Cases`` only at format time — the FTS index
+        keeps the full description so any rare query that lands on a
+        use-case phrase still ranks."""
+        ep = Endpoint(
+            title="Demo",
+            path="/v1/demo",
+            market="Stocks",
+            description=(
+                "Retrieve demo data.\n\nUse Cases: arbitrage_keyword_unique strategies."
+            ),
+            path_prefix="/v1/demo",
+        )
+        idx = EndpointIndex([ep])
+        results = idx.search("arbitrage_keyword_unique")
+        assert len(results) == 1
+
+    def test_more_collapses_filter_operators(self):
+        """``more`` mode drops ``.gt``/``.gte``/``.lt``/``.lte``/
+        ``.any_of`` variant rows and annotates the base field with the
+        available operators instead."""
+        ep = Endpoint(
+            title="Filterable",
+            path="/v1/filterable",
+            market="Stocks",
+            description="Test.",
+            query_params=[
+                QueryParam(
+                    name="ticker",
+                    type="string",
+                    required=False,
+                    description="Stock ticker.",
+                ),
+                QueryParam(
+                    name="ticker.any_of",
+                    type="string",
+                    required=False,
+                    description="Filter equal to any of the values.",
+                ),
+                QueryParam(
+                    name="ticker.gt",
+                    type="string",
+                    required=False,
+                    description="Filter greater than the value.",
+                ),
+                QueryParam(
+                    name="ticker.gte",
+                    type="string",
+                    required=False,
+                    description="Filter greater than or equal.",
+                ),
+                QueryParam(
+                    name="ticker.lt",
+                    type="string",
+                    required=False,
+                    description="Filter less than the value.",
+                ),
+                QueryParam(
+                    name="ticker.lte",
+                    type="string",
+                    required=False,
+                    description="Filter less than or equal.",
+                ),
+                QueryParam(
+                    name="limit",
+                    type="integer",
+                    required=False,
+                    description="Max rows.",
+                ),
+            ],
+            path_prefix="/v1/filterable",
+        )
+        out = ep.format("more")
+        # Base fields appear once with the operator annotation.
+        assert "ticker (string, optional) [filters: any_of, gt, gte, lt, lte]" in out
+        # No variant rows leak through.
+        assert "ticker.gt" not in out
+        assert "ticker.lte" not in out
+        assert "ticker.any_of" not in out
+        # Non-filterable params render normally (no annotation).
+        assert "limit (integer, optional): Max rows." in out
+
+    def test_verbose_keeps_every_param(self):
+        """Verbose is opt-in for full detail — every operator variant
+        line still renders."""
+        ep = Endpoint(
+            title="Filterable",
+            path="/v1/filterable",
+            market="Stocks",
+            description="Test.",
+            query_params=[
+                QueryParam(
+                    name="ticker",
+                    type="string",
+                    required=False,
+                    description="Stock ticker.",
+                ),
+                QueryParam(
+                    name="ticker.gt",
+                    type="string",
+                    required=False,
+                    description="Filter greater than the value.",
+                ),
+            ],
+            path_prefix="/v1/filterable",
+        )
+        out = ep.format("verbose")
+        assert "ticker.gt" in out
+
+    def test_orphan_dotted_param_passes_through(self):
+        """A dotted param whose base isn't in the list still renders —
+        we never drop unknown structure on the floor."""
+        ep = Endpoint(
+            title="Odd",
+            path="/v1/odd",
+            market="Stocks",
+            description="Test.",
+            query_params=[
+                # No base "foo" param — the dotted variant must still
+                # render so the LLM sees it.
+                QueryParam(
+                    name="foo.gt", type="string", required=False, description="Filter."
+                ),
+            ],
+            path_prefix="/v1/odd",
+        )
+        out = ep.format("more")
+        assert "foo.gt" in out

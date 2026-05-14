@@ -37,6 +37,28 @@ class TestTable:
         assert t.columns == []
         assert len(t) == 0
 
+    def test_from_records_preserves_casing(self):
+        t = Table.from_records([{"Name": "Alice", "AGE": 30}])
+        assert t.columns == ["Name", "AGE"]
+        assert t["Name"] == ["Alice"]
+        assert t["AGE"] == [30]
+
+    def test_from_records_deduplicates_case_insensitive_columns(self):
+        """Massive.com returns both T (ticker) and t (timestamp)."""
+        t = Table.from_records([{"T": "AAPL", "v": 100.0, "t": 1704067200000}])
+        assert t.columns == ["T", "v", "t_2"]
+        assert t["T"] == ["AAPL"]
+        assert t["v"] == [100.0]
+        assert t["t_2"] == [1704067200000]
+
+    def test_from_records_dedup_multiple_collisions(self):
+        t = Table.from_records([{"a": 1, "A": 2, "A_2": 3}])
+        # a preserved, A collides -> A_2, A_2 collides with A_2 -> A_2_2
+        assert t.columns == ["a", "A_2", "A_2_2"]
+        assert t["a"] == [1]
+        assert t["A_2"] == [2]
+        assert t["A_2_2"] == [3]
+
     def test_len(self):
         t = Table(["x"], {"x": [1, 2, 3]})
         assert len(t) == 3
@@ -87,6 +109,45 @@ class TestTable:
         assert "3" in result
         lines = result.strip().split("\n")
         assert len(lines) == 4  # header + 3 rows
+
+    def test_write_csv_truncation_disabled_by_default(self):
+        long_text = "x" * 5000
+        t = Table(["col"], {"col": [long_text]})
+        csv = t.write_csv()
+        assert long_text in csv
+        assert "truncated" not in csv
+
+    def test_write_csv_truncates_long_string_cells(self):
+        long_text = "abcdef" * 500  # 3000 chars
+        t = Table(["col"], {"col": [long_text]})
+        csv = t.write_csv(max_cell_chars=100)
+        assert "[truncated: 2900 more chars]" in csv
+        # First 100 chars of the original text are preserved verbatim
+        assert long_text[:100] in csv
+        # Full string is NOT present
+        assert long_text not in csv
+
+    def test_write_csv_preserves_short_cells_when_cap_set(self):
+        t = Table(["a", "b"], {"a": ["hi", "ok"], "b": [1, 2]})
+        csv = t.write_csv(max_cell_chars=100)
+        assert "truncated" not in csv
+        assert "hi" in csv and "ok" in csv
+
+    def test_write_csv_truncation_preserves_numeric_cells(self):
+        """Numeric cells below the cap are written identically with or without
+        the cap — the truncation path only kicks in for over-limit strings."""
+        t = Table(["a"], {"a": [42, 3.14, None, 1_000_000]})
+        assert t.write_csv() == t.write_csv(max_cell_chars=50)
+        assert "truncated" not in t.write_csv(max_cell_chars=50)
+
+    def test_write_csv_truncation_only_fires_over_limit(self):
+        t = Table(["col"], {"col": ["x" * 100, "y" * 101]})
+        csv = t.write_csv(max_cell_chars=100)
+        lines = csv.strip().split("\n")
+        # First row exactly 100 chars — not truncated
+        assert "truncated" not in lines[1]
+        # Second row 101 chars — truncated
+        assert "[truncated: 1 more chars]" in lines[2]
 
     def test_get_column_missing_raises(self):
         t = Table(["a"], {"a": [1]})
@@ -255,6 +316,31 @@ class TestDataFrameStore:
         s.store("t", self._sample_records(3))
         summary = s.store("t", self._sample_records(7))
         assert summary.row_count == 7
+
+    def test_store_preview_caps_long_text_cells(self):
+        """Preview cells are capped at PREVIEW_MAX_CELL_CHARS (200) — the
+        preview conveys shape, not content.  Without a cap, storing 10-K
+        filing text would blow up the call_api response by tens of
+        thousands of tokens per request."""
+        s = DataFrameStore()
+        long_body = "supply chain risk " * 200  # ~3600 chars per row
+        summary = s.store(
+            "risks",
+            [{"category": "Supply", "body": long_body}],
+        )
+        assert "[truncated:" in summary.preview
+        assert long_body not in summary.preview
+        # But the stored table retains the full value
+        assert s.get_table("risks")["body"][0] == long_body
+
+    def test_store_table_preview_caps_long_text_cells(self):
+        """store_table must apply the same preview cap as store."""
+        s = DataFrameStore()
+        long_body = "x" * 3000
+        t = Table(["body"], {"body": [long_body]})
+        summary = s.store_table("t", t)
+        assert "[truncated:" in summary.preview
+        assert long_body not in summary.preview
 
     def test_store_invalid_name(self):
         s = DataFrameStore()
@@ -537,6 +623,28 @@ class TestDuplicateColumnGuardrails:
         tbl = Table(["a", "b", "c"], {"a": [1], "b": [2], "c": [3]})
         # Should not raise
         s._check_duplicate_columns(tbl)
+
+    def test_store_and_query_case_insensitive_columns(self):
+        """End-to-end: store records with T/t columns, query via SQL."""
+        s = DataFrameStore()
+        records = [
+            {
+                "T": "AAPL",
+                "v": 45000000.0,
+                "vw": 150.5,
+                "o": 149.0,
+                "c": 151.0,
+                "h": 152.0,
+                "l": 148.0,
+                "t": 1704067200000,
+                "n": 500000,
+            },
+        ]
+        result = s.store("prices", records)
+        assert result.row_count == 1
+
+        csv = s.query("SELECT T, v, t_2 FROM prices")
+        assert csv == "T,v,t_2\nAAPL,45000000.0,1704067200000\n"
 
 
 class TestScalarSubqueryRewrite:
@@ -2693,6 +2801,138 @@ class TestSQLiteDefenseInDepth:
         assert result["rn"] == [1, 2]
 
 
+class TestCustomTimestampFunctions:
+    """Tests for to_timestamp() and to_date() SQL functions."""
+
+    def _make_store(self):
+        s = DataFrameStore()
+        s.store(
+            "data",
+            [
+                {"t_ms": 1710460800000, "t_ns": 1710460800000000000, "t_s": 1710460800},
+                {"t_ms": 1710374400000, "t_ns": 1710374400000000000, "t_s": 1710374400},
+            ],
+        )
+        return s
+
+    def test_to_timestamp_epoch_ms(self):
+        s = self._make_store()
+        result = s.query("SELECT to_timestamp(t_ms) as ts FROM data LIMIT 1")
+        assert "2024-03-15T00:00:00Z" in result
+
+    def test_to_timestamp_epoch_ns(self):
+        s = self._make_store()
+        result = s.query("SELECT to_timestamp(t_ns) as ts FROM data LIMIT 1")
+        assert "2024-03-15" in result
+
+    def test_to_timestamp_epoch_seconds(self):
+        s = self._make_store()
+        result = s.query("SELECT to_timestamp(t_s) as ts FROM data LIMIT 1")
+        assert "2024-03-15T00:00:00Z" in result
+
+    def test_to_timestamp_null(self):
+        s = DataFrameStore()
+        s.store("nulls", [{"t": None}])
+        result = s.query("SELECT to_timestamp(t) as ts FROM nulls")
+        assert "ts" in result  # header exists
+        lines = result.strip().split("\n")
+        assert len(lines) == 2  # header + 1 row
+
+    def test_to_date_epoch_ms(self):
+        s = self._make_store()
+        result = s.query("SELECT to_date(t_ms) as d FROM data LIMIT 1")
+        assert "2024-03-15" in result
+
+    def test_to_date_epoch_ns(self):
+        s = self._make_store()
+        result = s.query("SELECT to_date(t_ns) as d FROM data LIMIT 1")
+        assert "2024-03-15" in result
+
+    def test_to_date_cross_asset_join(self):
+        """to_date() enables JOINs across assets with different timestamp offsets."""
+        s = DataFrameStore()
+        # Crypto midnight UTC vs equity 4am ET (4-hour offset)
+        s.store("btc", [{"t": 1710460800000, "close": 71250.0}])
+        s.store("spy", [{"t": 1710475200000, "close": 512.5}])
+
+        # Raw JOIN fails
+        raw = s.query("SELECT * FROM btc JOIN spy ON btc.t = spy.t")
+        raw_rows = raw.strip().split("\n")
+        assert len(raw_rows) <= 2  # header only or header + 0 rows
+
+        # to_date JOIN succeeds
+        result = s.query(
+            "SELECT to_date(btc.t) as d, btc.close as btc, spy.close as spy "
+            "FROM btc JOIN spy ON to_date(btc.t) = to_date(spy.t)"
+        )
+        assert "71250" in result
+        assert "512.5" in result
+
+    def test_to_date_iso_string_passthrough(self):
+        s = DataFrameStore()
+        s.store("opts", [{"expiry": "2026-04-17T00:00:00Z", "strike": 260}])
+        result = s.query("SELECT to_date(expiry) as d, strike FROM opts")
+        assert "2026-04-17" in result
+
+
+class TestCorrAggregate:
+    """Tests for the CORR() SQL aggregate function."""
+
+    def test_perfect_positive_correlation(self):
+        s = DataFrameStore()
+        s.store("data", [{"x": i, "y": i * 2} for i in range(10)])
+        result = s.query("SELECT CORR(x, y) as c FROM data")
+        assert "1.0" in result
+
+    def test_perfect_negative_correlation(self):
+        s = DataFrameStore()
+        s.store("data", [{"x": i, "y": -i} for i in range(10)])
+        result = s.query("SELECT CORR(x, y) as c FROM data")
+        assert "-1.0" in result
+
+    def test_zero_correlation(self):
+        """Orthogonal data should produce near-zero correlation."""
+        s = DataFrameStore()
+        s.store(
+            "data",
+            [
+                {"x": 1, "y": 0},
+                {"x": -1, "y": 0},
+                {"x": 0, "y": 1},
+                {"x": 0, "y": -1},
+            ],
+        )
+        result = s.query("SELECT CORR(x, y) as c FROM data")
+        val = float(result.strip().split("\n")[1])
+        assert abs(val) < 0.01
+
+    def test_corr_with_nulls(self):
+        """NULL pairs should be skipped."""
+        s = DataFrameStore()
+        s.store(
+            "data",
+            [
+                {"x": 1, "y": 2},
+                {"x": None, "y": 5},
+                {"x": 3, "y": 6},
+                {"x": 4, "y": None},
+                {"x": 5, "y": 10},
+            ],
+        )
+        # Should only use the 3 complete pairs: (1,2), (3,6), (5,10)
+        result = s.query("SELECT CORR(x, y) as c FROM data")
+        val = float(result.strip().split("\n")[1])
+        assert val > 0.99  # strong positive
+
+    def test_corr_insufficient_data(self):
+        """Fewer than 2 complete pairs should return NULL."""
+        s = DataFrameStore()
+        s.store("data", [{"x": 1, "y": 2}])
+        result = s.query("SELECT CORR(x, y) as c FROM data")
+        lines = result.strip().split("\n")
+        assert lines[1].strip('"') == ""  # NULL
+
+
 class TestReservedTableNames:
     """Tests for _RESERVED_TABLE_NAMES blocking."""
 
@@ -2726,6 +2966,134 @@ class TestReservedTableNames:
         s = DataFrameStore()
         summary = s.store(name, [{"x": 1}])
         assert summary.table_name == name
+
+
+class TestFullTextSearch:
+    """Tests for the single-table FTS5 backing of TEXT-containing stores."""
+
+    @staticmethod
+    def _risks_store() -> DataFrameStore:
+        s = DataFrameStore()
+        s.store(
+            "risks",
+            [
+                {
+                    "category": "Supply",
+                    "text": "Reliance on single-source suppliers for lithium and nickel.",
+                },
+                {
+                    "category": "Market",
+                    "text": "A drop in consumer demand could affect revenue.",
+                },
+                {
+                    "category": "Logistics",
+                    "text": "Semiconductor chip shortage impacts procurement and logistics.",
+                },
+            ],
+        )
+        return s
+
+    def test_match_and_bm25_on_base_table(self):
+        s = self._risks_store()
+        df = s.query_table(
+            "SELECT category, bm25(risks) AS score FROM risks "
+            "WHERE risks MATCH 'supplier OR chip OR logistics' "
+            "ORDER BY score"
+        )
+        assert set(df["category"]) == {"Supply", "Logistics"}
+
+    def test_order_by_rank_pseudo_column(self):
+        s = self._risks_store()
+        df = s.query_table(
+            "SELECT category FROM risks WHERE risks MATCH 'supplier OR chip' "
+            "ORDER BY rank"
+        )
+        assert set(df["category"]) == {"Supply", "Logistics"}
+
+    def test_snippet_on_indexed_column(self):
+        s = self._risks_store()
+        df = s.query_table(
+            "SELECT snippet(risks, 1, '[', ']', '...', 6) AS snip "
+            "FROM risks WHERE risks MATCH 'lithium'"
+        )
+        assert "[lithium]" in df["snip"][0]
+
+    def test_prefix_match(self):
+        s = self._risks_store()
+        df = s.query_table("SELECT category FROM risks WHERE risks MATCH 'supp*'")
+        assert df["category"] == ["Supply"]
+
+    def test_column_scoped_match(self):
+        s = self._risks_store()
+        df = s.query_table(
+            "SELECT category FROM risks WHERE risks MATCH '{text}: nickel'"
+        )
+        assert df["category"] == ["Supply"]
+
+    def test_non_match_filter_still_works(self):
+        s = self._risks_store()
+        df = s.query_table("SELECT category FROM risks WHERE category = 'Market'")
+        assert df["category"] == ["Market"]
+
+    def test_numeric_columns_preserve_type(self):
+        """UNINDEXED numeric columns must retain INTEGER/REAL affinity."""
+        s = DataFrameStore()
+        s.store(
+            "q",
+            [
+                {"ticker": "AAPL", "note": "hello", "volume": 100, "price": 150.25},
+                {"ticker": "MSFT", "note": "world", "volume": 2, "price": 300.5},
+                {"ticker": "GOOG", "note": "abc", "volume": 20, "price": 2700.0},
+            ],
+        )
+        df = s.query_table("SELECT ticker FROM q ORDER BY volume")
+        assert df["ticker"] == ["MSFT", "GOOG", "AAPL"]
+        df = s.query_table("SELECT SUM(volume) AS s, AVG(price) AS a FROM q")
+        assert df["s"][0] == 122
+        assert df["a"][0] == pytest.approx(1050.25)
+
+    def test_plain_table_when_no_text_columns(self):
+        """Tables with only numeric columns fall back to plain CREATE TABLE."""
+        s = DataFrameStore()
+        s.store("nums", [{"x": 1, "y": 2.5}, {"x": 3, "y": 4.5}])
+        df = s.query_table("SELECT SUM(x) AS s FROM nums")
+        assert df["s"][0] == 4
+        with pytest.raises((ValueError, Exception)):
+            s.query("SELECT * FROM nums WHERE nums MATCH 'x'")
+
+    def test_reserved_rank_column_falls_back_to_plain(self):
+        """A column named 'rank' collides with FTS5 — use plain table."""
+        s = DataFrameStore()
+        s.store("r", [{"rank": 1, "note": "hello"}, {"rank": 2, "note": "world"}])
+        df = s.query_table("SELECT SUM(rank) AS s FROM r")
+        assert df["s"][0] == 3
+        with pytest.raises((ValueError, Exception)):
+            s.query("SELECT * FROM r WHERE r MATCH 'hello'")
+
+    def test_reserved_rowid_column_falls_back_to_plain(self):
+        s = DataFrameStore()
+        s.store("r", [{"rowid": 5, "note": "hello"}])
+        df = s.query_table("SELECT note FROM r")
+        assert df["note"] == ["hello"]
+        with pytest.raises((ValueError, Exception)):
+            s.query("SELECT * FROM r WHERE r MATCH 'hello'")
+
+    def test_shadow_tables_not_queryable(self):
+        """FTS5 shadow tables (foo_data, foo_idx, ...) must not be readable."""
+        s = self._risks_store()
+        for shadow in ("risks_data", "risks_idx", "risks_config", "risks_docsize"):
+            with pytest.raises((ValueError, Exception)):
+                s.query(f"SELECT * FROM {shadow}")
+
+    def test_create_virtual_table_still_blocked(self):
+        s = self._risks_store()
+        with pytest.raises(ValueError):
+            s.query("CREATE VIRTUAL TABLE evil USING fts5(a)")
+
+    def test_pragma_still_blocked(self):
+        s = self._risks_store()
+        with pytest.raises(ValueError):
+            s.query("PRAGMA data_version")
 
 
 class TestQueryTimeout:

@@ -18,16 +18,15 @@
 
 A [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server that provides access to the full [Massive.com](https://massive.com?utm_campaign=mcp&utm_medium=referral&utm_source=github) financial data API through an LLM-friendly interface.
 
-Rather than exposing one tool per endpoint, this server gives the LLM four composable tools — **search**, **docs**, **call**, and **query** — that cover the entire Massive.com API surface. Data can be stored in-memory as DataFrames, queried with SQL, and enriched with built-in financial functions.
+Rather than exposing one tool per endpoint, this server gives the LLM three composable tools — **search**, **call**, and **query** — that cover the entire Massive.com API surface. Data can be stored in an in-memory SQLite database, and enriched with built-in financial functions.
 
 ## Tools
 
 | Tool | Description |
 |---|---|
-| `search_endpoints` | Search for API endpoints and built-in functions by natural language query. Returns names, URL patterns, and descriptions. Supports scoping to `endpoints`, `functions`, or `all`. |
-| `get_endpoint_docs` | Get parameter documentation for a specific endpoint. Pass the docs URL from `search_endpoints` results. |
-| `call_api` | Call any Massive.com REST API endpoint. Supports storing results as an in-memory DataFrame (`store_as`) and applying post-processing functions (`apply`). Paginated responses include a next-page hint. |
-| `query_data` | Run SQL against stored DataFrames using SQLite. Supports `SHOW TABLES`, `DESCRIBE <table>`, `DROP TABLE <table>`, CTEs, window functions, and more. Results can also be post-processed with `apply`. |
+| `search_endpoints` | Search for API endpoints and built-in functions by natural language query. Returns titles, path patterns, and descriptions. Set `detail` to `"more"` for query parameter docs, or `"verbose"` for full documentation. Use `max_results` to limit results. |
+| `call_api` | Call any Massive.com REST API endpoint. Supports storing results as an in-memory database table (`store_as`) and applying post-processing functions (`apply`). Paginated responses include a next-page hint. |
+| `query_data` | Run SQL against stored SQLite DB. Supports `SHOW TABLES`, `DESCRIBE <table>`, `DROP TABLE <table>`, CTEs, window functions, and more. Results can also be post-processed with `apply`. |
 
 ### Built-in Functions
 
@@ -72,7 +71,7 @@ Install the MCP server, then register it with Claude Code:
 
 ```bash
 # Install the server (one-time — downloads dependencies ahead of time)
-uv tool install "mcp_massive @ git+https://github.com/massive-com/mcp_massive@v0.8.7"
+uv tool install "mcp_massive @ git+https://github.com/massive-com/mcp_massive@v0.10.0"
 
 # Register with Claude Code
 claude mcp add massive -e MASSIVE_API_KEY=your_api_key_here -- mcp_massive
@@ -102,7 +101,7 @@ You can also run `claude mcp add-from-claude-desktop` if the MCP server is insta
 1. Install the server:
 
 ```bash
-uv tool install "mcp_massive @ git+https://github.com/massive-com/mcp_massive@v0.8.7"
+uv tool install "mcp_massive @ git+https://github.com/massive-com/mcp_massive@v0.10.0"
 ```
 
 3. Find the installed binary path:
@@ -146,8 +145,8 @@ where mcp_massive
 | `MCP_TRANSPORT` | No | `stdio` | Transport protocol: `stdio`, `sse`, or `streamable-http` |
 | `MASSIVE_API_BASE_URL` | No | `https://api.massive.com` | Base URL for API requests |
 | `MASSIVE_LLMS_TXT_URL` | No | `https://massive.com/docs/rest/llms.txt` | URL for the endpoint index |
-| `MASSIVE_MAX_TABLES` | No | `50` | Maximum number of in-memory DataFrames |
-| `MASSIVE_MAX_ROWS` | No | `50000` | Maximum rows per stored DataFrame |
+| `MASSIVE_MAX_TABLES` | No | `50` | Maximum number of in-memory tables |
+| `MASSIVE_MAX_ROWS` | No | `50000` | Maximum rows per stored tables |
 
 ### Transport
 
@@ -220,6 +219,8 @@ npx @modelcontextprotocol/inspector uv --directory /path/to/mcp_massive run mcp_
 ```
 
 This will launch a browser interface where you can interact with your MCP server directly and see input/output for each tool.
+
+Select the `STDIO` transport type in the browser UI with the command `uv` and `run mcp_massive` as the arguments.
 
 ### Code Linting
 

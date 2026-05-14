@@ -8,14 +8,14 @@ column/literal inputs.
 
 import math
 import re
+import sqlite3
 from enum import Enum
 from typing import Any, Callable
 
 import numpy as np
-import bm25s
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from .index import _tokenize
+from .index import _expand_query
 from .store import Table
 
 _VALID_OPTION_TYPES = frozenset({"call", "put"})
@@ -205,18 +205,30 @@ def _bs_d1d2(
     return d1, d2
 
 
+def _bs_inputs(
+    inputs: dict[str, Any], n: int
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Resolve the five common BS params (S, K, T, r, sigma) to numpy arrays.
+
+    apply_pipeline guarantees these keys are present before the impl runs;
+    no defensive checks needed here.
+    """
+    return (
+        _to_numpy(inputs["S"], n),
+        _to_numpy(inputs["K"], n),
+        _to_numpy(inputs["T"], n),
+        _to_numpy(inputs["r"], n),
+        _to_numpy(inputs["sigma"], n),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Greeks implementations
 # ---------------------------------------------------------------------------
 
 
 def _impl_bs_price(table: Table, inputs: dict[str, Any]) -> np.ndarray:
-    n = len(table)
-    S = _to_numpy(inputs["S"], n)
-    K = _to_numpy(inputs["K"], n)
-    T = _to_numpy(inputs["T"], n)
-    r = _to_numpy(inputs["r"], n)
-    sigma = _to_numpy(inputs["sigma"], n)
+    S, K, T, r, sigma = _bs_inputs(inputs, len(table))
     option_type = _validate_option_type(inputs)
 
     d1, d2 = _bs_d1d2(S, K, T, r, sigma)
@@ -228,12 +240,7 @@ def _impl_bs_price(table: Table, inputs: dict[str, Any]) -> np.ndarray:
 
 
 def _impl_bs_delta(table: Table, inputs: dict[str, Any]) -> np.ndarray:
-    n = len(table)
-    S = _to_numpy(inputs["S"], n)
-    K = _to_numpy(inputs["K"], n)
-    T = _to_numpy(inputs["T"], n)
-    r = _to_numpy(inputs["r"], n)
-    sigma = _to_numpy(inputs["sigma"], n)
+    S, K, T, r, sigma = _bs_inputs(inputs, len(table))
     option_type = _validate_option_type(inputs)
 
     d1, _d2 = _bs_d1d2(S, K, T, r, sigma)
@@ -245,12 +252,7 @@ def _impl_bs_delta(table: Table, inputs: dict[str, Any]) -> np.ndarray:
 
 
 def _impl_bs_gamma(table: Table, inputs: dict[str, Any]) -> np.ndarray:
-    n = len(table)
-    S = _to_numpy(inputs["S"], n)
-    K = _to_numpy(inputs["K"], n)
-    T = _to_numpy(inputs["T"], n)
-    r = _to_numpy(inputs["r"], n)
-    sigma = _to_numpy(inputs["sigma"], n)
+    S, K, T, r, sigma = _bs_inputs(inputs, len(table))
 
     d1, _d2 = _bs_d1d2(S, K, T, r, sigma)
     gamma = _norm_pdf(d1) / (S * sigma * np.sqrt(T))
@@ -258,12 +260,7 @@ def _impl_bs_gamma(table: Table, inputs: dict[str, Any]) -> np.ndarray:
 
 
 def _impl_bs_theta(table: Table, inputs: dict[str, Any]) -> np.ndarray:
-    n = len(table)
-    S = _to_numpy(inputs["S"], n)
-    K = _to_numpy(inputs["K"], n)
-    T = _to_numpy(inputs["T"], n)
-    r = _to_numpy(inputs["r"], n)
-    sigma = _to_numpy(inputs["sigma"], n)
+    S, K, T, r, sigma = _bs_inputs(inputs, len(table))
     option_type = _validate_option_type(inputs)
 
     d1, d2 = _bs_d1d2(S, K, T, r, sigma)
@@ -277,12 +274,7 @@ def _impl_bs_theta(table: Table, inputs: dict[str, Any]) -> np.ndarray:
 
 
 def _impl_bs_vega(table: Table, inputs: dict[str, Any]) -> np.ndarray:
-    n = len(table)
-    S = _to_numpy(inputs["S"], n)
-    K = _to_numpy(inputs["K"], n)
-    T = _to_numpy(inputs["T"], n)
-    r = _to_numpy(inputs["r"], n)
-    sigma = _to_numpy(inputs["sigma"], n)
+    S, K, T, r, sigma = _bs_inputs(inputs, len(table))
 
     d1, _d2 = _bs_d1d2(S, K, T, r, sigma)
     vega = S * _norm_pdf(d1) * np.sqrt(T)
@@ -291,12 +283,7 @@ def _impl_bs_vega(table: Table, inputs: dict[str, Any]) -> np.ndarray:
 
 
 def _impl_bs_rho(table: Table, inputs: dict[str, Any]) -> np.ndarray:
-    n = len(table)
-    S = _to_numpy(inputs["S"], n)
-    K = _to_numpy(inputs["K"], n)
-    T = _to_numpy(inputs["T"], n)
-    r = _to_numpy(inputs["r"], n)
-    sigma = _to_numpy(inputs["sigma"], n)
+    S, K, T, r, sigma = _bs_inputs(inputs, len(table))
     option_type = _validate_option_type(inputs)
 
     _d1, d2 = _bs_d1d2(S, K, T, r, sigma)
@@ -306,6 +293,72 @@ def _impl_bs_rho(table: Table, inputs: dict[str, Any]) -> np.ndarray:
         rho = -K * T * np.exp(-r * T) * _norm_cdf(-d2)
     # Per 1% rate change
     return rho / 100.0
+
+
+def _impl_bs_vanna(table: Table, inputs: dict[str, Any]) -> np.ndarray:
+    S, K, T, r, sigma = _bs_inputs(inputs, len(table))
+
+    d1, d2 = _bs_d1d2(S, K, T, r, sigma)
+    vanna = -_norm_pdf(d1) * d2 / sigma
+    # Per 1% change in volatility (matches bs_vega scaling)
+    return vanna / 100.0
+
+
+def _impl_bs_volga(table: Table, inputs: dict[str, Any]) -> np.ndarray:
+    S, K, T, r, sigma = _bs_inputs(inputs, len(table))
+
+    d1, d2 = _bs_d1d2(S, K, T, r, sigma)
+    vega = S * _norm_pdf(d1) * np.sqrt(T)
+    volga = vega * d1 * d2 / sigma
+    # Per (1% vol)^2 — change in bs_vega per 1% vol change
+    return volga / 10000.0
+
+
+# Calendar-time time-decay Greeks: ∂x/∂t (bleeds with passage of time).
+# Same sign convention as bs_theta — negative for the long-option holder
+# in the typical ATM case.  Assumes no dividends (q=0); under that
+# assumption charm/veta/color are identical for calls and puts.
+
+
+def _impl_bs_charm(table: Table, inputs: dict[str, Any]) -> np.ndarray:
+    S, K, T, r, sigma = _bs_inputs(inputs, len(table))
+
+    d1, d2 = _bs_d1d2(S, K, T, r, sigma)
+    sqrt_T = np.sqrt(T)
+    charm = (
+        -_norm_pdf(d1) * (2 * r * T - d2 * sigma * sqrt_T) / (2 * T * sigma * sqrt_T)
+    )
+    # Per day (matches bs_theta /365 convention)
+    return charm / 365.0
+
+
+def _impl_bs_veta(table: Table, inputs: dict[str, Any]) -> np.ndarray:
+    S, K, T, r, sigma = _bs_inputs(inputs, len(table))
+
+    d1, d2 = _bs_d1d2(S, K, T, r, sigma)
+    sqrt_T = np.sqrt(T)
+    veta = (
+        S
+        * _norm_pdf(d1)
+        * sqrt_T
+        * (r * d1 / (sigma * sqrt_T) - (1.0 + d1 * d2) / (2.0 * T))
+    )
+    # Per day, per 1% vol — change in bs_vega per day
+    return veta / 36500.0
+
+
+def _impl_bs_color(table: Table, inputs: dict[str, Any]) -> np.ndarray:
+    S, K, T, r, sigma = _bs_inputs(inputs, len(table))
+
+    d1, d2 = _bs_d1d2(S, K, T, r, sigma)
+    sqrt_T = np.sqrt(T)
+    color = (
+        _norm_pdf(d1)
+        / (2.0 * S * T * sigma * sqrt_T)
+        * (1.0 + (2.0 * r * T - d2 * sigma * sqrt_T) * d1 / (sigma * sqrt_T))
+    )
+    # Per day — change in bs_gamma per day
+    return color / 365.0
 
 
 # ---------------------------------------------------------------------------
@@ -547,7 +600,7 @@ _register(
     FunctionDef(
         name="bs_theta",
         category="Greeks",
-        description="Black-Scholes daily theta (annual theta / 365).",
+        description="Black-Scholes daily theta. Time decay — change in option price per day (annual theta / 365).",
         params=[*_BS_COMMON_PARAMS, _BS_OPTION_TYPE_PARAM],
         output_dtype="Float64",
         impl=_impl_bs_theta,
@@ -573,6 +626,61 @@ _register(
         params=[*_BS_COMMON_PARAMS, _BS_OPTION_TYPE_PARAM],
         output_dtype="Float64",
         impl=_impl_bs_rho,
+    )
+)
+
+_register(
+    FunctionDef(
+        name="bs_vanna",
+        category="Greeks",
+        description="Black-Scholes vanna (dDelta/dSigma = dVega/dSpot) per 1% change in volatility. Same for calls and puts.",
+        params=list(_BS_COMMON_PARAMS),
+        output_dtype="Float64",
+        impl=_impl_bs_vanna,
+    )
+)
+
+_register(
+    FunctionDef(
+        name="bs_volga",
+        category="Greeks",
+        description="Black-Scholes volga / vomma. Change in bs_vega per 1% volatility change. Same for calls and puts.",
+        params=list(_BS_COMMON_PARAMS),
+        output_dtype="Float64",
+        impl=_impl_bs_volga,
+    )
+)
+
+_register(
+    FunctionDef(
+        name="bs_charm",
+        category="Greeks",
+        description="Black-Scholes charm (delta decay). Change in bs_delta per day. Assumes no dividends; same for calls and puts under that assumption.",
+        params=list(_BS_COMMON_PARAMS),
+        output_dtype="Float64",
+        impl=_impl_bs_charm,
+    )
+)
+
+_register(
+    FunctionDef(
+        name="bs_veta",
+        category="Greeks",
+        description="Black-Scholes veta / DvegaDtime (vega decay). Change in bs_vega per day. Assumes no dividends; same for calls and puts under that assumption.",
+        params=list(_BS_COMMON_PARAMS),
+        output_dtype="Float64",
+        impl=_impl_bs_veta,
+    )
+)
+
+_register(
+    FunctionDef(
+        name="bs_color",
+        category="Greeks",
+        description="Black-Scholes color (gamma decay). Change in bs_gamma per day. Assumes no dividends; same for calls and puts under that assumption.",
+        params=list(_BS_COMMON_PARAMS),
+        output_dtype="Float64",
+        impl=_impl_bs_color,
     )
 )
 
@@ -722,33 +830,39 @@ _register(
 
 
 class FunctionIndex:
-    """BM25 search index over registered functions."""
+    """FTS5-backed BM25 search index over registered functions."""
 
     def __init__(self, registry: dict[str, FunctionDef] | None = None) -> None:
         reg = registry or FUNCTION_REGISTRY
         self._functions = list(reg.values())
-        if self._functions:
-            tokenized = [_tokenize(f.search_text) for f in self._functions]
-            self._bm25 = bm25s.BM25()
-            self._bm25.index(tokenized)
-        else:
-            self._bm25 = None
+
+        self._conn = sqlite3.connect(":memory:", check_same_thread=False)
+        self._conn.execute(
+            "CREATE VIRTUAL TABLE fn_fts USING fts5( search_text, tokenize='porter')"
+        )
+        for i, func in enumerate(self._functions):
+            self._conn.execute(
+                "INSERT INTO fn_fts(rowid, search_text) VALUES (?, ?)",
+                (i, func.search_text),
+            )
 
     def search(self, query: str, top_k: int = 5) -> list[FunctionDef]:
-        if self._bm25 is None or not self._functions:
+        if not self._functions:
             return []
-        tokenized_query = _tokenize(query)
-        results, scores = self._bm25.retrieve(
-            [tokenized_query],
-            k=min(top_k, len(self._functions)),
-        )
-        indices: list[int] = list(results[0])
-        query_scores: list[float] = list(scores[0])
-        return [
-            self._functions[idx]
-            for idx, score in zip(indices, query_scores)
-            if score > 0
-        ]
+        fts_query = _expand_query(query)
+        if not fts_query:
+            return []
+        try:
+            cursor = self._conn.execute(
+                "SELECT rowid FROM fn_fts "
+                "WHERE fn_fts MATCH ? "
+                "ORDER BY bm25(fn_fts) "
+                "LIMIT ?",
+                (fts_query, min(top_k, len(self._functions))),
+            )
+            return [self._functions[row[0]] for row in cursor.fetchall()]
+        except sqlite3.OperationalError:
+            return []
 
 
 # ---------------------------------------------------------------------------
